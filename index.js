@@ -203,4 +203,4 @@ client.on("channelDelete", async (channel) => {
   }
 });
 
-client.login("⁠MTUxNDY4MTk2OTgxODk5Mjg1MA.GpS2nW.udYsv6EA7utB6G61c8sJf3voW8hWKg3vbx6VSU⁠");
+client.login("MTUxNDY4MTY3MTg0ODUwNDMy.Gps2nW.udYsv6EA7utB6G61c8sJf3voW8hWKg3vbx6VSU");
