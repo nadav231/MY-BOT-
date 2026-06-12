@@ -203,3 +203,4 @@ client.on("channelDelete", async (channel) => {
   }
 });
 
+client.login(process.env.DISCORD_TOKEN);
