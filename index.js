@@ -8,6 +8,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  PermissionFlagsBits,
 } from "discord.js";
 
 // ─── Express Server ──────────────────────────────────────────────────────────
@@ -72,76 +73,106 @@ const rolePriority = [
   "1496911471915962557",
 ];
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const ALLOWED_DELETE_ROLE_ID = "1515409287676035228"; // רול מחיקת חדרים
+// ─── Constants & Configurations ──────────────────────────────────────────────
+const ALLOWED_DELETE_ROLE_ID = "1515409287676035228"; // הרול שעוקף את כל הגנות ה-Anti-Nuke
 const VERIFY_ROLE_ID = "1496911471915962552";        // רול ממבר (💸 Members)
+
+const MAX_ACTIONS_ALLOWED = 3; 
+const ACTION_RESET_TIME = 10000; 
+
+const userActionLog = new Map();
 
 const client = new Client({
   intents: [
-    GatewayIntentBits.Guilds, 
+    GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages, // דרוש כדי לקרוא את פקודת הפאנל
-    GatewayIntentBits.MessageContent // דרוש כדי לזהות את הטקסט של הפקודה
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.GuildExpressions,
   ],
 });
 
-// ─── Nickname Helper ──────────────────────────────────────────────────────────
+// ─── Helper Functions ────────────────────────────────────────────────────────
 
+// פונקציה שבודקת האם המשתמש עוקף את ההגנות (בעלים, בוט, או בעל הרול המיוחד)
+async function shouldBypass(guild, executorId) {
+  if (executorId === guild.ownerId || executorId === client.user.id) return true;
+
+  const member = await guild.members.fetch(executorId).catch(() => null);
+  if (!member) return false;
+
+  // אם יש לו את הרול המורשה - הוא יכול לעקוף הכל
+  return member.roles.cache.has(ALLOWED_DELETE_ROLE_ID);
+}
+
+// פונקציית ענישה אוטומטית
+async function punishUser(guild, executorId, reason) {
+  try {
+    if (executorId === guild.ownerId) return;
+    
+    const member = await guild.members.fetch(executorId).catch(() => null);
+    if (!member) return;
+
+    const botMember = guild.members.me;
+    if (member.roles.highest.position >= botMember.roles.highest.position) {
+      console.log(`[Anti-Nuke] Cannot punish ${member.user.tag} — Role too high.`);
+      return;
+    }
+
+    await member.roles.set([]).catch(() => null);
+    await member.ban({ reason: `Anti-Nuke Triggered: ${reason}` });
+    console.log(`[💥 Anti-Nuke BAN] Banned ${member.user.tag}. Reason: ${reason}`);
+  } catch (err) {
+    console.error("[Anti-Nuke Punishment] Error:", err.message);
+  }
+}
+
+// בדיקת הצפות
+function isMassActionTriggered(userId, actionType) {
+  const key = `${userId}_${actionType}`;
+  const now = Date.now();
+
+  if (!userActionLog.has(key)) {
+    userActionLog.set(key, []);
+  }
+
+  const timestamps = userActionLog.get(key);
+  const validTimestamps = timestamps.filter(time => now - time < ACTION_RESET_TIME);
+  
+  validTimestamps.push(now);
+  userActionLog.set(key, validTimestamps);
+
+  return validTimestamps.length > MAX_ACTIONS_ALLOWED;
+}
+
+// ניקוי ועדכון כינויים
 async function updateMemberNickname(member) {
   let prefix = null;
-
   for (const roleId of rolePriority) {
     if (member.roles.cache.has(roleId)) {
       prefix = rolePrefixes[roleId];
       break;
     }
   }
-
   if (!prefix) {
-    if (member.nickname) {
-      await member.setNickname(null);
-      console.log(`[Nickname] Reset: ${member.user.tag}`);
-    }
+    if (member.nickname) await member.setNickname(null).catch(() => null);
     return;
   }
-
-  const baseName = member.displayName.replace(
-    /^(MG|AR|SA|AD|IN|SMD|MOD|GR|SH|HR|RS|VIP)\s\|\s/i,
-    ""
-  );
-
+  const baseName = member.displayName.replace(/^(MG|AR|SA|AD|IN|SMD|MOD|GR|SH|HR|RS|VIP)\s\|\s/i, "");
   const newNickname = `${prefix} | ${baseName}`;
-
   if (member.nickname !== newNickname) {
-    await member.setNickname(newNickname);
-    console.log(`[Nickname] ${member.user.tag} → ${newNickname}`);
+    await member.setNickname(newNickname).catch(() => null);
   }
 }
 
-// ─── Bulk Sync ────────────────────────────────────────────────────────────────
-
 async function syncAllMembers() {
-  console.log("[Sync] Starting bulk nickname sync...");
-
   const guild = client.guilds.cache.first();
-  if (!guild) {
-    console.warn("[Sync] No guild found");
-    return;
-  }
-
-  await guild.members.fetch();
-
-  let count = 0;
+  if (!guild) return;
+  await guild.members.fetch().catch(() => null);
   for (const member of guild.members.cache.values()) {
-    try {
-      await updateMemberNickname(member);
-      count++;
-    } catch (err) {
-      console.error(`[Sync] Error for ${member.user.tag}:`, err.message);
-    }
+    await updateMemberNickname(member).catch(() => null);
   }
-
-  console.log(`[Sync] Done — ${count} members processed`);
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -152,117 +183,56 @@ client.once("ready", async () => {
 });
 
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
-  try {
-    await updateMemberNickname(newMember);
-  } catch (err) {
-    console.error("[Nickname] Error:", err.message);
-  }
+  await updateMemberNickname(newMember).catch(() => null);
 });
 
-// פקודה ליצירת פאנל האימות
+// פקודת פאנל האימות
 client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-
-  // פקודה ליצירת פאנל (מומלץ שרק מנהלים ישתמשו בה)
-  if (message.content === "verify.panel") {
-    try {
-      // מוחק את הודעת הפקודה המקורית כדי שהצ'אט יישאר נקי
-      await message.delete().catch(() => null);
-
-      // יצירת הכפתור
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("verify_button")
-          .setLabel("אימות")
-          .setStyle(ButtonStyle.Success) // כפתור ירוק
-      );
-
-      // עיצוב הודעת הפאנל
-      const embed = new EmbedBuilder()
-        .setTitle("מערכת אימות השרת")
-        .setDescription("לחץ על הכפתור למטה כדי לפתוח את החדרים בשרת ולקבל גישה!")
-        .setColor("#00ff00");
-
-      await message.channel.send({ embeds: [embed], components: [row] });
-      console.log(`[Verify] Panel deployed in #${message.channel.name}`);
-    } catch (err) {
-      console.error("[Verify Command] Error:", err.message);
-    }
-  }
-});
-
-// טיפול בלחיצה על כפתור האימות
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
-
-  if (interaction.customId === "verify_button") {
-    try {
-      const member = interaction.member;
-
-      // בדיקה אם למשתמש כבר יש את הרול
-      if (member.roles.cache.has(VERIFY_ROLE_ID)) {
-        return await interaction.reply({
-          content: "אתה כבר מאומת בשרת!",
-          ephemeral: true, // הודעה נסתרת שרק הוא רואה
-        });
-      }
-
-      // נתינת הרול למשתמש
-      await member.roles.add(VERIFY_ROLE_ID);
-
-      // שליחת הודעת הצלחה נסתרת למשתמש
-      await interaction.reply({
-        content: "אוממת בהצלחה קיבלת גישה לחדרים",
-        ephemeral: true,
-      });
-
-      console.log(`[Verify] ${member.user.tag} has verified successfully.`);
-    } catch (err) {
-      console.error("[Verify Interaction] Error:", err.message);
-      await interaction.reply({
-        content: "אירעה שגיאה בזמן הניסיון להעניק לך רול. ודא כי הרול של הבוט נמצא מעל הרול של הממברס.",
-        ephemeral: true,
-      }).catch(() => null);
-    }
-  }
-});
-
-client.on("channelDelete", async (channel) => {
+  if (message.author.bot || message.content !== "verify.panel") return;
   try {
-    if (!channel.guild) return;
+    await message.delete().catch(() => null);
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("verify_button").setLabel("אימות").setStyle(ButtonStyle.Success)
+    );
+    const embed = new EmbedBuilder()
+      .setTitle("מערכת אימות השרת")
+      .setDescription("לחץ על הכפתור למטה כדי לפתוח את החדרים בשרת ולקבל גישה!")
+      .setColor("#00ff00");
 
-    const guild = channel.guild;
+    await message.channel.send({ embeds: [embed], components: [row] });
+  } catch (err) { console.error(err); }
+});
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    const fetchedLogs = await guild.fetchAuditLogs({
-      limit: 1,
-      type: AuditLogEvent.ChannelDelete,
-    });
-
-    const deletionLog = fetchedLogs.entries.first();
-    if (!deletionLog) return;
-
-    const { executor } = deletionLog;
-    if (!executor) return;
-
-    const member = await guild.members.fetch(executor.id).catch(() => null);
-    if (!member) return;
-
-    if (member.roles.cache.has(ALLOWED_DELETE_ROLE_ID)) {
-      console.log(`[Anti-Nuke] ${executor.tag} deleted #${channel.name} safely (has bypass role).`);
-      return;
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton() || interaction.customId !== "verify_button") return;
+  try {
+    const member = interaction.member;
+    if (member.roles.cache.has(VERIFY_ROLE_ID)) {
+      return await interaction.reply({ content: "אתה כבר מאומת בשרת!", ephemeral: true });
     }
+    await member.roles.add(VERIFY_ROLE_ID);
+    await interaction.reply({ content: "אוממת בהצלחה קיבלת גישה לחדרים", ephemeral: true });
+  } catch (err) { console.error(err); }
+});
 
-    console.log(`[Anti-Nuke] ${executor.tag} deleted #${channel.name} without permission! Recreating and banning...`);
+// 1. הגנה מפני מחיקת חדרים / קטגוריות
+client.on("channelDelete", async (channel) => {
+  if (!channel.guild) return;
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const logs = await channel.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelDelete });
+    const logEntry = logs.entries.first();
+    if (!logEntry) return;
 
-    const newChannel = await guild.channels.create({
+    const { executor } = logEntry;
+    if (await shouldBypass(channel.guild, executor.id)) return;
+
+    await channel.guild.channels.create({
       name: channel.name,
       type: channel.type,
       parent: channel.parentId ?? undefined,
       topic: channel.topic ?? undefined,
       nsfw: channel.nsfw ?? false,
-      rateLimitPerUser: channel.rateLimitPerUser ?? undefined,
       permissionOverwrites: channel.permissionOverwrites?.cache.map((o) => ({
         id: o.id,
         allow: o.allow.bitfield,
@@ -270,23 +240,112 @@ client.on("channelDelete", async (channel) => {
       })) ?? [],
     });
 
-    console.log(`[Anti-Nuke] Recreated #${newChannel.name}`);
+    await punishUser(channel.guild, executor.id, `Deleted channel/category without permission: #${channel.name}`);
+  } catch (err) { console.error(err.message); }
+});
 
-    if (executor.id === guild.ownerId) return;
+// 2. הגנה מפני יצירת חדרים המונית
+client.on("channelCreate", async (channel) => {
+  if (!channel.guild) return;
+  try {
+    const logs = await channel.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelCreate });
+    const logEntry = logs.entries.first();
+    if (!logEntry) return;
 
-    const botMember = guild.members.me;
-    if (!botMember) return;
+    const { executor } = logEntry;
+    if (await shouldBypass(channel.guild, executor.id)) return;
 
-    if (member.roles.highest.position >= botMember.roles.highest.position) {
-      console.log(`[Anti-Nuke] Cannot ban ${executor.tag} — role too high`);
-      return;
+    if (isMassActionTriggered(executor.id, "channel_create")) {
+      await channel.delete().catch(() => null);
+      await punishUser(channel.guild, executor.id, "Mass channel creation spam");
+    }
+  } catch (err) { console.error(err.message); }
+});
+
+// 3. הגנה מפני מחיקת רולים
+client.on("roleDelete", async (role) => {
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const logs = await role.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleDelete });
+    const logEntry = logs.entries.first();
+    if (!logEntry) return;
+
+    const { executor } = logEntry;
+    if (await shouldBypass(role.guild, executor.id)) return;
+
+    await role.guild.roles.create({
+      name: role.name,
+      color: role.color,
+      hoist: role.hoist,
+      permissions: role.permissions,
+      mentionable: role.mentionable,
+      position: role.position,
+    });
+
+    await punishUser(role.guild, executor.id, `Deleted server role: ${role.name}`);
+  } catch (err) { console.error(err.message); }
+});
+
+// 4. הגנה מפני יצירת רולים המונית
+client.on("roleCreate", async (role) => {
+  try {
+    const logs = await role.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleCreate });
+    const logEntry = logs.entries.first();
+    if (!logEntry) return;
+
+    const { executor } = logEntry;
+    if (await shouldBypass(role.guild, executor.id)) return;
+
+    if (isMassActionTriggered(executor.id, "role_create")) {
+      await role.delete().catch(() => null);
+      await punishUser(role.guild, executor.id, "Mass role creation spam");
+    }
+  } catch (err) { console.error(err.message); }
+});
+
+// 5. הגנות מתקדמות מבוססות Audit Log (הכוללות בדיקת מעקף של הרול)
+client.on("guildAuditLogEntryCreate", async (auditLogEntry, guild) => {
+  try {
+    const { action, executorId } = auditLogEntry;
+    if (!executorId) return;
+    if (await shouldBypass(guild, executorId)) return;
+
+    if (action === AuditLogEvent.EmojiDelete) {
+      await punishUser(guild, executorId, "Deleted a server emoji");
     }
 
-    await member.ban({ reason: "Anti-Nuke: Deleted a channel without permission" });
-    console.log(`[Anti-Nuke] Banned ${executor.tag}`);
-  } catch (err) {
-    console.error("[Anti-Nuke] Error:", err.message);
-  }
+    if (action === AuditLogEvent.WebhookCreate || action === AuditLogEvent.WebhookDelete) {
+      await punishUser(guild, executorId, "Unauthorized Webhook manipulation");
+    }
+
+    if (action === AuditLogEvent.GuildUpdate) {
+      await punishUser(guild, executorId, "Attempted to modify crucial server settings (Name/Icon)");
+    }
+
+    if (action === AuditLogEvent.RoleUpdate) {
+      const logs = await guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleUpdate });
+      const entry = logs.entries.first();
+      if (entry) {
+        const hasAdminUpdate = entry.changes.some(c => c.key === "permissions" && (BigInt(c.new) & PermissionFlagsBits.Administrator));
+        if (hasAdminUpdate) {
+          await punishUser(guild, executorId, "Granted dangerous Administrator permissions to a role");
+        }
+      }
+    }
+
+    if (action === AuditLogEvent.MemberBanAdd) {
+      if (isMassActionTriggered(executorId, "mass_ban")) {
+        await punishUser(guild, executorId, "Mass banning users (Nuke attempt)");
+      }
+    }
+
+    if (action === AuditLogEvent.MemberKick) {
+      if (isMassActionTriggered(executorId, "mass_kick")) {
+        await punishUser(guild, executorId, "Mass kicking users (Nuke attempt)");
+      }
+    }
+
+  } catch (err) { console.error(err.message); }
 });
 
 client.login(process.env.DISCORD_TOKEN);
