@@ -68,6 +68,9 @@ const rolePriority = [
   "1496911471915962557",
 ];
 
+// ה-ID של הרול שמורשה למחוק חדרים
+const ALLOWED_DELETE_ROLE_ID = "1515409287676035228";
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
@@ -165,8 +168,19 @@ client.on("channelDelete", async (channel) => {
     const { executor } = deletionLog;
     if (!executor) return;
 
-    console.log(`[Anti-Nuke] ${executor.tag} deleted #${channel.name}`);
+    // מביא את הפרטים של המשתמש שמחק את החדר מהשרת
+    const member = await guild.members.fetch(executor.id).catch(() => null);
+    if (!member) return;
 
+    // בדיקה: אם למשתמש יש את הרול המורשה - הבוט עוצר כאן ולא עושה כלום (החדר נמחק ואין באן)
+    if (member.roles.cache.has(ALLOWED_DELETE_ROLE_ID)) {
+      console.log(`[Anti-Nuke] ${executor.tag} deleted #${channel.name} safely (has bypass role).`);
+      return;
+    }
+
+    console.log(`[Anti-Nuke] ${executor.tag} deleted #${channel.name} without permission! Recreating and banning...`);
+
+    // שחזור החדר במידה ואין לו את הרול
     const newChannel = await guild.channels.create({
       name: channel.name,
       type: channel.type,
@@ -183,20 +197,20 @@ client.on("channelDelete", async (channel) => {
 
     console.log(`[Anti-Nuke] Recreated #${newChannel.name}`);
 
+    // הגנה שלא יתן באן לבעלים של השרת במקרה
     if (executor.id === guild.ownerId) return;
-
-    const member = await guild.members.fetch(executor.id).catch(() => null);
-    if (!member) return;
 
     const botMember = guild.members.me;
     if (!botMember) return;
 
+    // הגנה שלא ינסה לתת באן למישהו עם רול גבוה יותר מהבוט
     if (member.roles.highest.position >= botMember.roles.highest.position) {
       console.log(`[Anti-Nuke] Cannot ban ${executor.tag} — role too high`);
       return;
     }
 
-    await member.ban({ reason: "Anti-Nuke: Deleted a channel" });
+    // מתן הבאן
+    await member.ban({ reason: "Anti-Nuke: Deleted a channel without permission" });
     console.log(`[Anti-Nuke] Banned ${executor.tag}`);
   } catch (err) {
     console.error("[Anti-Nuke] Error:", err.message);
