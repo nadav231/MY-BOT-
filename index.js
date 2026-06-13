@@ -4,6 +4,10 @@ import {
   GatewayIntentBits,
   AuditLogEvent,
   ChannelType,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
 } from "discord.js";
 
 // ─── Express Server ──────────────────────────────────────────────────────────
@@ -68,11 +72,17 @@ const rolePriority = [
   "1496911471915962557",
 ];
 
-// ה-ID של הרול שמורשה למחוק חדרים
-const ALLOWED_DELETE_ROLE_ID = "1515409287676035228";
+// ─── Constants ────────────────────────────────────────────────────────────────
+const ALLOWED_DELETE_ROLE_ID = "1515409287676035228"; // רול מחיקת חדרים
+const VERIFY_ROLE_ID = "1496911471915962552";        // רול ממבר (💸 Members)
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
+  intents: [
+    GatewayIntentBits.Guilds, 
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages, // דרוש כדי לקרוא את פקודת הפאנל
+    GatewayIntentBits.MessageContent // דרוש כדי לזהות את הטקסט של הפקודה
+  ],
 });
 
 // ─── Nickname Helper ──────────────────────────────────────────────────────────
@@ -149,6 +159,74 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   }
 });
 
+// פקודה ליצירת פאנל האימות
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+
+  // פקודה ליצירת פאנל (מומלץ שרק מנהלים ישתמשו בה)
+  if (message.content === "verify.panel") {
+    try {
+      // מוחק את הודעת הפקודה המקורית כדי שהצ'אט יישאר נקי
+      await message.delete().catch(() => null);
+
+      // יצירת הכפתור
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("verify_button")
+          .setLabel("אימות")
+          .setStyle(ButtonStyle.Success) // כפתור ירוק
+      );
+
+      // עיצוב הודעת הפאנל
+      const embed = new EmbedBuilder()
+        .setTitle("מערכת אימות השרת")
+        .setDescription("לחץ על הכפתור למטה כדי לפתוח את החדרים בשרת ולקבל גישה!")
+        .setColor("#00ff00");
+
+      await message.channel.send({ embeds: [embed], components: [row] });
+      console.log(`[Verify] Panel deployed in #${message.channel.name}`);
+    } catch (err) {
+      console.error("[Verify Command] Error:", err.message);
+    }
+  }
+});
+
+// טיפול בלחיצה על כפתור האימות
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  if (interaction.customId === "verify_button") {
+    try {
+      const member = interaction.member;
+
+      // בדיקה אם למשתמש כבר יש את הרול
+      if (member.roles.cache.has(VERIFY_ROLE_ID)) {
+        return await interaction.reply({
+          content: "אתה כבר מאומת בשרת!",
+          ephemeral: true, // הודעה נסתרת שרק הוא רואה
+        });
+      }
+
+      // נתינת הרול למשתמש
+      await member.roles.add(VERIFY_ROLE_ID);
+
+      // שליחת הודעת הצלחה נסתרת למשתמש
+      await interaction.reply({
+        content: "אוממת בהצלחה קיבלת גישה לחדרים",
+        ephemeral: true,
+      });
+
+      console.log(`[Verify] ${member.user.tag} has verified successfully.`);
+    } catch (err) {
+      console.error("[Verify Interaction] Error:", err.message);
+      await interaction.reply({
+        content: "אירעה שגיאה בזמן הניסיון להעניק לך רול. ודא כי הרול של הבוט נמצא מעל הרול של הממברס.",
+        ephemeral: true,
+      }).catch(() => null);
+    }
+  }
+});
+
 client.on("channelDelete", async (channel) => {
   try {
     if (!channel.guild) return;
@@ -168,11 +246,9 @@ client.on("channelDelete", async (channel) => {
     const { executor } = deletionLog;
     if (!executor) return;
 
-    // מביא את הפרטים של המשתמש שמחק את החדר מהשרת
     const member = await guild.members.fetch(executor.id).catch(() => null);
     if (!member) return;
 
-    // בדיקה: אם למשתמש יש את הרול המורשה - הבוט עוצר כאן ולא עושה כלום (החדר נמחק ואין באן)
     if (member.roles.cache.has(ALLOWED_DELETE_ROLE_ID)) {
       console.log(`[Anti-Nuke] ${executor.tag} deleted #${channel.name} safely (has bypass role).`);
       return;
@@ -180,7 +256,6 @@ client.on("channelDelete", async (channel) => {
 
     console.log(`[Anti-Nuke] ${executor.tag} deleted #${channel.name} without permission! Recreating and banning...`);
 
-    // שחזור החדר במידה ואין לו את הרול
     const newChannel = await guild.channels.create({
       name: channel.name,
       type: channel.type,
@@ -197,19 +272,16 @@ client.on("channelDelete", async (channel) => {
 
     console.log(`[Anti-Nuke] Recreated #${newChannel.name}`);
 
-    // הגנה שלא יתן באן לבעלים של השרת במקרה
     if (executor.id === guild.ownerId) return;
 
     const botMember = guild.members.me;
     if (!botMember) return;
 
-    // הגנה שלא ינסה לתת באן למישהו עם רול גבוה יותר מהבוט
     if (member.roles.highest.position >= botMember.roles.highest.position) {
       console.log(`[Anti-Nuke] Cannot ban ${executor.tag} — role too high`);
       return;
     }
 
-    // מתן הבאן
     await member.ban({ reason: "Anti-Nuke: Deleted a channel without permission" });
     console.log(`[Anti-Nuke] Banned ${executor.tag}`);
   } catch (err) {
