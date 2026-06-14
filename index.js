@@ -77,11 +77,17 @@ const rolePriority = [
 const ALLOWED_DELETE_ROLE_ID = "1515409287676035228"; // הרול שעוקף את כל הגנות ה-Anti-Nuke
 const VERIFY_ROLE_ID = "1496911471915962552";        // רול ממבר (💸 Members)
 
-// הרולים המעודכנים ששלחת עכשיו (Staff ו-High Staff)
-const STAFF_ROLE_IDS = [
-  "1496911471915962555", // Staff
-  "1496911471928410218"  // High Staff
-]; 
+// הגדרת רולים ספציפיים לתארים בהודעות
+const OWNER_ROLE_ID = "1496911471941259292";
+const CO_OWNER_ROLE_ID = "1496911471941259290";
+
+// כל הרולים שמורשים לענות לקריאות (Owner, Co-Owner, High Staff, Staff)
+const ALL_STAFF_IDS = [
+  OWNER_ROLE_ID,
+  CO_OWNER_ROLE_ID,
+  "1496911471928410218", // High Staff
+  "1496911471915962555"  // Staff
+];
 
 const MAX_ACTIONS_ALLOWED = 3; 
 const ACTION_RESET_TIME = 10000; 
@@ -255,13 +261,21 @@ client.on("interactionCreate", async (interaction) => {
     try {
       const member = interaction.member;
       
-      // בדיקה האם המשתמש שלחץ מחזיק באחד מרולי הצוות המעודכנים
-      const isStaff = STAFF_ROLE_IDS.some(roleId => member.roles.cache.has(roleId));
-      if (!isStaff) {
+      // בדיקה האם המשתמש מורשה לטפל בקריאות
+      const hasPermission = ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === interaction.guild.ownerId;
+      if (!hasPermission) {
         return await interaction.reply({
           content: "❌ אינך מורשה לטפל בקריאות עזרה. כפתור זה מיועד לצוות הניהול בלבד!",
           ephemeral: true
         });
+      }
+
+      // קביעת התואר לפי הרול של המשיב
+      let titlePrefix = "הצוות";
+      if (member.roles.cache.has(OWNER_ROLE_ID) || interaction.user.id === interaction.guild.ownerId) {
+        titlePrefix = "האוונר";
+      } else if (member.roles.cache.has(CO_OWNER_ROLE_ID)) {
+        titlePrefix = "הקו-אוונר";
       }
 
       const requesterId = interaction.customId.split("_")[2];
@@ -269,15 +283,16 @@ client.on("interactionCreate", async (interaction) => {
       const oldEmbed = interaction.message.embeds[0];
       const updatedEmbed = EmbedBuilder.from(oldEmbed)
         .setColor("#f1c40f") 
-        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה נלקחה לטיפול על ידי ${interaction.user}` });
+        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה נלקחה לטיפול על ידי ${titlePrefix} ${interaction.user}` });
 
       await interaction.update({
         embeds: [updatedEmbed],
         components: [] 
       });
 
+      // שליחת ההודעה המותאמת אישית לצ'אט
       await interaction.channel.send({
-        content: `👋 <@${requesterId}>, המנהל ${interaction.user} איתך עכשיו ומטפל בפנייה שלך!`
+        content: `👋 <@${requesterId}>, ${titlePrefix} ${interaction.user} איתך עכשיו ומטפל בפנייה שלך!`
       });
 
     } catch (err) { console.error("[Help Interaction Error]", err.message); }
