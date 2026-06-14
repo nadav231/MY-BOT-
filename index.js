@@ -76,8 +76,8 @@ const rolePriority = [
 ];
 
 // ─── Constants & Configurations ──────────────────────────────────────────────
-const ALLOWED_DELETE_ROLE_ID = "1515409287676035228"; // הרול שעוקף את כל הגנות ה-Anti-Nuke
-const VERIFY_ROLE_ID = "1496911471915962552";        // רול ממבר (💸 Members)
+const ALLOWED_DELETE_ROLE_ID = "1515409287676035228"; 
+const VERIFY_ROLE_ID = "1496911471915962552";        
 
 // הגדרת רולים ספציפיים לתארים בהודעות
 const OWNER_ROLE_ID = "1496911471941259292";
@@ -85,7 +85,7 @@ const CO_OWNER_ROLE_ID = "1496911471941259290";
 const HIGH_STAFF_ROLE_ID = "1496911471928410218";
 const STAFF_ROLE_ID = "1496911471915962555";
 
-// כל הרולים שמורשים לענות לקריאות ולצפות בטיקטים
+// כל הרולים שמורשים קבוע לראות את חדרי הטיקטים
 const ALL_STAFF_IDS = [
   OWNER_ROLE_ID,
   CO_OWNER_ROLE_ID,
@@ -93,7 +93,13 @@ const ALL_STAFF_IDS = [
   STAFF_ROLE_ID
 ];
 
-// מזהה קטגוריית הטיקטים שנתת לי
+// רולים שמורשים לסגור טיקטים (בנוסף לאדמיניסטרטורים)
+const TICKET_CLOSE_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
+
+// רולים שמקבלים תיוג (Ping) בפתיחת טיקט חדש (רק High Staff ו-Staff!)
+const TICKET_PING_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
+
+// מזהה קטגוריית הטיקטים
 const TICKET_CATEGORY_ID = "1496911473392222231";
 
 const MAX_ACTIONS_ALLOWED = 3; 
@@ -201,7 +207,6 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // 1. פקודת פאנל האימות
   if (message.content === "verify.panel") {
     try {
       await message.delete().catch(() => null);
@@ -218,7 +223,6 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // 2. פקודת פאנל הטיקטים (ticket.panl / ticket.panel)
   if (message.content === "ticket.panl" || message.content === "ticket.panel") {
     try {
       await message.delete().catch(() => null);
@@ -240,7 +244,6 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // 3. פקודת מערכת העזרה (!h)
   if (message.content.startsWith("!h")) {
     try {
       const args = message.content.slice(2).trim();
@@ -268,29 +271,26 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// אינטראקציות של כפתורים ותפריטים
+// אינטראקציות
 client.on("interactionCreate", async (interaction) => {
   
-  // א. טיפול בבחירת נושא הטיקט מתוך התפריט הנפתח (Select Menu)
   if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type_select") {
     try {
       await interaction.deferReply({ ephemeral: true });
-      const choice = interaction.values[0]; // הנושא שנבחר
+      const choice = interaction.values[0]; 
       const guild = interaction.guild;
 
-      // יצירת מערך הרשאות לחדר הטיקט (רק הפותח והצוות יכולים לראות)
       const permissionOverwrites = [
         {
           id: guild.roles.everyone.id,
-          deny: [PermissionFlagsBits.ViewChannel], // חסימה לכולם
+          deny: [PermissionFlagsBits.ViewChannel], 
         },
         {
           id: interaction.user.id,
-          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory], // אישור לפותח הטיקט
+          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory], 
         }
       ];
 
-      // הוספת הרשאות לכל אחד מרולי הצוות שהגדרת
       ALL_STAFF_IDS.forEach(roleId => {
         permissionOverwrites.push({
           id: roleId,
@@ -298,7 +298,6 @@ client.on("interactionCreate", async (interaction) => {
         });
       });
 
-      // יצירת ערוץ הטיקט תחת הקטגוריה המבוקשת
       const ticketChannel = await guild.channels.create({
         name: `🎫-${choice}-${interaction.user.username}`,
         type: ChannelType.GuildText,
@@ -306,40 +305,42 @@ client.on("interactionCreate", async (interaction) => {
         permissionOverwrites: permissionOverwrites
       });
 
-      // הודעת פתיחה יפה בתוך הטיקט
       const ticketEmbed = new EmbedBuilder()
         .setTitle(`טיקט בנושא: ${choice}`)
         .setDescription(`שלום ${interaction.user}, צוות השרת קיבל את פנייתך בנושא **${choice}**.\nאנא פרט את סיבת הפנייה כאן ונציג יתפנה אליך בהקדם.`)
         .setColor("#00ffea")
         .setTimestamp();
 
-      const closeRow = new ActionRowBuilder().addComponents(
+      const actionRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`ticket_claim_${interaction.user.id}`)
+          .setLabel("🤝 קח אחריות על הטיקט")
+          .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
           .setCustomId("ticket_close")
           .setLabel("🔒 סגור טיקט")
           .setStyle(ButtonStyle.Danger)
       );
 
-      // תיוג של פותח הטיקט והצוות כדי שיקבלו התראה
-      const staffMentions = ALL_STAFF_IDS.map(id => `<@&${id}>`).join(" ");
+      const staffMentions = TICKET_PING_ROLES.map(id => `<@&${id}>`).join(" ");
+      
       await ticketChannel.send({
         content: `${interaction.user} ${staffMentions}`,
         embeds: [ticketEmbed],
-        components: [closeRow]
+        components: [actionRow]
       });
 
       await interaction.editReply({ content: `✅ הטיקט שלך נפתח בהצלחה בחדר: ${ticketChannel}` });
 
     } catch (err) {
       console.error("[Create Ticket Error]", err.message);
-      await interaction.editReply({ content: "❌ אירעה שגיאה ביצירת הטיקט, ודא שהגדרת את ה-ID של הקטגוריה נכון ושלבוט יש הרשאות ניהול חדרים." });
+      await interaction.editReply({ content: "❌ אירעה שגיאה ביצירת הטיקט." });
     }
     return;
   }
 
   if (!interaction.isButton()) return;
 
-  // ב. לחיצה ראשונית על כפתור "פתיחת טיקט" (שולח את תפריט הבחירה)
   if (interaction.customId === "ticket_open_init") {
     try {
       const selectMenu = new StringSelectMenuBuilder()
@@ -357,23 +358,66 @@ client.on("interactionCreate", async (interaction) => {
       await interaction.reply({
         content: "אנא בחר מהתפריט הבא את הנושא המתאים ביותר לפנייה שלך:",
         components: [row],
-        ephemeral: true // נסתר לעיני המשתמש בלבד
+        ephemeral: true 
       });
     } catch (err) { console.error(err); }
     return;
   }
 
-  // ג. סגירת טיקט ומחיקת החדר
+  // 1. כפתור לקיחת אחריות על הטיקט (מורשים: רולי צוות או אדמיניסטרטורים)
+  if (interaction.customId.startsWith("ticket_claim_")) {
+    try {
+      const member = interaction.member;
+      
+      // בדיקה: האם הוא ברשימת הרולים, או שהוא האוונר, או שיש לו אדמין קבוע
+      const hasPermission = 
+        ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || 
+        interaction.user.id === interaction.guild.ownerId ||
+        member.permissions.has(PermissionFlagsBits.Administrator);
+      
+      if (!hasPermission) {
+        return await interaction.reply({ content: "❌ רק צוות השרת או משתמשים עם הרשאת Administrator מורשים לקחת אחריות על טיקטים!", ephemeral: true });
+      }
+
+      const requesterId = interaction.customId.split("_")[2];
+      const oldEmbed = interaction.message.embeds[0];
+
+      const updatedEmbed = EmbedBuilder.from(oldEmbed)
+        .addFields({ name: "📌 סטטוס טיקט:", value: `הטיקט נלקח לטיפול על ידי המנהל/איש הצוות ${interaction.user}` })
+        .setColor("#2ecc71");
+
+      const updatedRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`ticket_claimed_by_${interaction.user.id}`)
+          .setLabel("✔ הטיקט בטיפול")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true), 
+        new ButtonBuilder()
+          .setCustomId("ticket_close")
+          .setLabel("🔒 סגור טיקט")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await interaction.update({ embeds: [updatedEmbed], components: [updatedRow] });
+      await interaction.channel.send({ content: `💼 **הטיקט נלקח לטיפול:** ${interaction.user} יעזור לך כעת, <@${requesterId}>.` });
+
+    } catch (err) { console.error(err); }
+    return;
+  }
+
+  // 2. כפתור סגירת הטיקט
   if (interaction.customId === "ticket_close") {
     try {
       const member = interaction.member;
-      const isStaff = ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === interaction.guild.ownerId;
       
-      if (!isStaff) {
-        return await interaction.reply({ content: "❌ רק צוות השרת מורשה לסגור את הטיקט!", ephemeral: true });
+      const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+      const hasAllowedRole = TICKET_CLOSE_ROLES.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === interaction.guild.ownerId;
+
+      if (!hasAdmin && !hasAllowedRole) {
+        return await interaction.reply({ content: "❌ רק דרגות High Staff ,Staff או משתמשים עם הרשאת Administrator מורשים לסגור את הטיקט!", ephemeral: true });
       }
 
-      await interaction.reply({ content: "🔒 הטיקט ייסגר ויימחק בעוד כ-5 שניות..." });
+      await interaction.reply({ content: "🔒 הטיקט נסגר על ידי הצוות ויימחק לצמיתות בעוד כ-5 שניות..." });
       
       setTimeout(async () => {
         await interaction.channel.delete().catch(() => null);
@@ -383,7 +427,6 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // ד. כפתור האימות הישן והטוב
   if (interaction.customId === "verify_button") {
     try {
       const member = interaction.member;
@@ -396,7 +439,6 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // ה. כפתור מענה לקריאת עזרה (!h)
   if (interaction.customId.startsWith("help_claim_")) {
     try {
       const member = interaction.member;
@@ -440,7 +482,6 @@ client.on("interactionCreate", async (interaction) => {
 
 client.on("channelDelete", async (channel) => {
   if (!channel.guild) return;
-  // מניעת שחזור אוטומטי אם חדר הטיקט עצמו נמחק על ידי הצוות בצורה מסודרת
   if (channel.parentId === TICKET_CATEGORY_ID) return;
   
   try {
@@ -471,7 +512,6 @@ client.on("channelDelete", async (channel) => {
 
 client.on("channelCreate", async (channel) => {
   if (!channel.guild) return;
-  // התעלמות מיצירת חדרים המתרחשת בתוך קטגוריית הטיקטים כדי לא להפעיל את ה-Anti-Nuke בטעות
   if (channel.parentId === TICKET_CATEGORY_ID) return;
 
   try {
