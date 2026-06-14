@@ -7,6 +7,8 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
   EmbedBuilder,
   PermissionFlagsBits,
 } from "discord.js";
@@ -80,14 +82,19 @@ const VERIFY_ROLE_ID = "1496911471915962552";        // רול ממבר (💸 Me
 // הגדרת רולים ספציפיים לתארים בהודעות
 const OWNER_ROLE_ID = "1496911471941259292";
 const CO_OWNER_ROLE_ID = "1496911471941259290";
+const HIGH_STAFF_ROLE_ID = "1496911471928410218";
+const STAFF_ROLE_ID = "1496911471915962555";
 
-// כל הרולים שמורשים לענות לקריאות (Owner, Co-Owner, High Staff, Staff)
+// כל הרולים שמורשים לענות לקריאות ולצפות בטיקטים
 const ALL_STAFF_IDS = [
   OWNER_ROLE_ID,
   CO_OWNER_ROLE_ID,
-  "1496911471928410218", // High Staff
-  "1496911471915962555"  // Staff
+  HIGH_STAFF_ROLE_ID,
+  STAFF_ROLE_ID
 ];
+
+// מזהה קטגוריית הטיקטים שנתת לי
+const TICKET_CATEGORY_ID = "1496911473392222231";
 
 const MAX_ACTIONS_ALLOWED = 3; 
 const ACTION_RESET_TIME = 10000; 
@@ -211,7 +218,29 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // 2. פקודת מערכת העזרה (!h)
+  // 2. פקודת פאנל הטיקטים (ticket.panl / ticket.panel)
+  if (message.content === "ticket.panl" || message.content === "ticket.panel") {
+    try {
+      await message.delete().catch(() => null);
+      
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("ticket_open_init")
+          .setLabel("📩 לחץ כאן לפתיחת טיקט")
+          .setStyle(ButtonStyle.Primary)
+      );
+
+      const embed = new EmbedBuilder()
+        .setTitle("מערכת הטיקטים והתמיכה")
+        .setDescription("צריך עזרה, רוצה להגיש תלונה או להציע שיתוף פעולה? לחץ על הכפתור למטה ובחר את נושא הפנייה שלך.")
+        .setColor("#2f3136");
+
+      await message.channel.send({ embeds: [embed], components: [row] });
+    } catch (err) { console.error("[Ticket Panel Error]", err.message); }
+    return;
+  }
+
+  // 3. פקודת מערכת העזרה (!h)
   if (message.content.startsWith("!h")) {
     try {
       const args = message.content.slice(2).trim();
@@ -239,11 +268,122 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// אינטראקציות של כפתורים
+// אינטראקציות של כפתורים ותפריטים
 client.on("interactionCreate", async (interaction) => {
+  
+  // א. טיפול בבחירת נושא הטיקט מתוך התפריט הנפתח (Select Menu)
+  if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type_select") {
+    try {
+      await interaction.deferReply({ ephemeral: true });
+      const choice = interaction.values[0]; // הנושא שנבחר
+      const guild = interaction.guild;
+
+      // יצירת מערך הרשאות לחדר הטיקט (רק הפותח והצוות יכולים לראות)
+      const permissionOverwrites = [
+        {
+          id: guild.roles.everyone.id,
+          deny: [PermissionFlagsBits.ViewChannel], // חסימה לכולם
+        },
+        {
+          id: interaction.user.id,
+          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory], // אישור לפותח הטיקט
+        }
+      ];
+
+      // הוספת הרשאות לכל אחד מרולי הצוות שהגדרת
+      ALL_STAFF_IDS.forEach(roleId => {
+        permissionOverwrites.push({
+          id: roleId,
+          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+        });
+      });
+
+      // יצירת ערוץ הטיקט תחת הקטגוריה המבוקשת
+      const ticketChannel = await guild.channels.create({
+        name: `🎫-${choice}-${interaction.user.username}`,
+        type: ChannelType.GuildText,
+        parent: TICKET_CATEGORY_ID,
+        permissionOverwrites: permissionOverwrites
+      });
+
+      // הודעת פתיחה יפה בתוך הטיקט
+      const ticketEmbed = new EmbedBuilder()
+        .setTitle(`טיקט בנושא: ${choice}`)
+        .setDescription(`שלום ${interaction.user}, צוות השרת קיבל את פנייתך בנושא **${choice}**.\nאנא פרט את סיבת הפנייה כאן ונציג יתפנה אליך בהקדם.`)
+        .setColor("#00ffea")
+        .setTimestamp();
+
+      const closeRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("ticket_close")
+          .setLabel("🔒 סגור טיקט")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      // תיוג של פותח הטיקט והצוות כדי שיקבלו התראה
+      const staffMentions = ALL_STAFF_IDS.map(id => `<@&${id}>`).join(" ");
+      await ticketChannel.send({
+        content: `${interaction.user} ${staffMentions}`,
+        embeds: [ticketEmbed],
+        components: [closeRow]
+      });
+
+      await interaction.editReply({ content: `✅ הטיקט שלך נפתח בהצלחה בחדר: ${ticketChannel}` });
+
+    } catch (err) {
+      console.error("[Create Ticket Error]", err.message);
+      await interaction.editReply({ content: "❌ אירעה שגיאה ביצירת הטיקט, ודא שהגדרת את ה-ID של הקטגוריה נכון ושלבוט יש הרשאות ניהול חדרים." });
+    }
+    return;
+  }
+
   if (!interaction.isButton()) return;
 
-  // א. כפתור האימות
+  // ב. לחיצה ראשונית על כפתור "פתיחת טיקט" (שולח את תפריט הבחירה)
+  if (interaction.customId === "ticket_open_init") {
+    try {
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId("ticket_type_select")
+        .setPlaceholder("🎯 בחר את נושא הפנייה שלך...")
+        .addOptions(
+          new StringSelectMenuOptionBuilder().setLabel("בחינה לצוות").setValue("בחינה-לצוות").setDescription("הגשת מועמדות או בירור לגבי כניסה לצוות"),
+          new StringSelectMenuOptionBuilder().setLabel("עזרה").setValue("עזרה").setDescription("תמיכה כללית או בעיה בשרת"),
+          new StringSelectMenuOptionBuilder().setLabel("שת\"פ (שותפות)").setValue("שתפ").setDescription("סגירת שותפויות או פרויקטים"),
+          new StringSelectMenuOptionBuilder().setLabel("תלונה").setValue("תלונה").setDescription("הגשת תלונה על משתמש או איש צוות")
+        );
+
+      const row = new ActionRowBuilder().addComponents(selectMenu);
+
+      await interaction.reply({
+        content: "אנא בחר מהתפריט הבא את הנושא המתאים ביותר לפנייה שלך:",
+        components: [row],
+        ephemeral: true // נסתר לעיני המשתמש בלבד
+      });
+    } catch (err) { console.error(err); }
+    return;
+  }
+
+  // ג. סגירת טיקט ומחיקת החדר
+  if (interaction.customId === "ticket_close") {
+    try {
+      const member = interaction.member;
+      const isStaff = ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === interaction.guild.ownerId;
+      
+      if (!isStaff) {
+        return await interaction.reply({ content: "❌ רק צוות השרת מורשה לסגור את הטיקט!", ephemeral: true });
+      }
+
+      await interaction.reply({ content: "🔒 הטיקט ייסגר ויימחק בעוד כ-5 שניות..." });
+      
+      setTimeout(async () => {
+        await interaction.channel.delete().catch(() => null);
+      }, 5000);
+
+    } catch (err) { console.error(err); }
+    return;
+  }
+
+  // ד. כפתור האימות הישן והטוב
   if (interaction.customId === "verify_button") {
     try {
       const member = interaction.member;
@@ -256,12 +396,11 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // ב. כפתור מענה לקריאת עזרה
+  // ה. כפתור מענה לקריאת עזרה (!h)
   if (interaction.customId.startsWith("help_claim_")) {
     try {
       const member = interaction.member;
       
-      // בדיקה האם המשתמש מורשה לטפל בקריאות
       const hasPermission = ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === interaction.guild.ownerId;
       if (!hasPermission) {
         return await interaction.reply({
@@ -270,7 +409,6 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      // קביעת התואר לפי הרול של המשיב
       let titlePrefix = "הצוות";
       if (member.roles.cache.has(OWNER_ROLE_ID) || interaction.user.id === interaction.guild.ownerId) {
         titlePrefix = "האוונר";
@@ -290,7 +428,6 @@ client.on("interactionCreate", async (interaction) => {
         components: [] 
       });
 
-      // שליחת ההודעה המותאמת אישית לצ'אט
       await interaction.channel.send({
         content: `👋 <@${requesterId}>, ${titlePrefix} ${interaction.user} איתך עכשיו ומטפל בפנייה שלך!`
       });
@@ -303,6 +440,9 @@ client.on("interactionCreate", async (interaction) => {
 
 client.on("channelDelete", async (channel) => {
   if (!channel.guild) return;
+  // מניעת שחזור אוטומטי אם חדר הטיקט עצמו נמחק על ידי הצוות בצורה מסודרת
+  if (channel.parentId === TICKET_CATEGORY_ID) return;
+  
   try {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     const logs = await channel.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelDelete });
@@ -331,6 +471,9 @@ client.on("channelDelete", async (channel) => {
 
 client.on("channelCreate", async (channel) => {
   if (!channel.guild) return;
+  // התעלמות מיצירת חדרים המתרחשת בתוך קטגוריית הטיקטים כדי לא להפעיל את ה-Anti-Nuke בטעות
+  if (channel.parentId === TICKET_CATEGORY_ID) return;
+
   try {
     const logs = await channel.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelCreate });
     const logEntry = logs.entries.first();
