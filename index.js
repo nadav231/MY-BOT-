@@ -364,12 +364,10 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // 1. כפתור לקיחת אחריות על הטיקט (מורשים: רולי צוות או אדמיניסטרטורים)
   if (interaction.customId.startsWith("ticket_claim_")) {
     try {
       const member = interaction.member;
       
-      // בדיקה: האם הוא ברשימת הרולים, או שהוא האוונר, או שיש לו אדמין קבוע
       const hasPermission = 
         ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || 
         interaction.user.id === interaction.guild.ownerId ||
@@ -405,7 +403,6 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // 2. כפתור סגירת הטיקט
   if (interaction.customId === "ticket_close") {
     try {
       const member = interaction.member;
@@ -439,11 +436,17 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
+  // תוקן: לקיחת קריאת עזרה (!h) בצורה סודית ומניעת הודעות ספאם כלליות
   if (interaction.customId.startsWith("help_claim_")) {
     try {
       const member = interaction.member;
+      const guild = interaction.guild;
       
-      const hasPermission = ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === interaction.guild.ownerId;
+      const hasPermission = 
+        ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || 
+        interaction.user.id === guild.ownerId ||
+        member.permissions.has(PermissionFlagsBits.Administrator);
+
       if (!hasPermission) {
         return await interaction.reply({
           content: "❌ אינך מורשה לטפל בקריאות עזרה. כפתור זה מיועד לצוות הניהול בלבד!",
@@ -451,8 +454,9 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      let titlePrefix = "הצוות";
-      if (member.roles.cache.has(OWNER_ROLE_ID) || interaction.user.id === interaction.guild.ownerId) {
+      // קביעת הטייטל של המנהל
+      let titlePrefix = "איש צוות";
+      if (interaction.user.id === guild.ownerId || member.roles.cache.has(OWNER_ROLE_ID)) {
         titlePrefix = "האוונר";
       } else if (member.roles.cache.has(CO_OWNER_ROLE_ID)) {
         titlePrefix = "הקו-אוונר";
@@ -460,19 +464,32 @@ client.on("interactionCreate", async (interaction) => {
 
       const requesterId = interaction.customId.split("_")[2];
       
+      // עדכון ה-Embed המקורי בשרת (משנים צבע ומסירים כפתור כדי שלא ילחצו שוב)
       const oldEmbed = interaction.message.embeds[0];
       const updatedEmbed = EmbedBuilder.from(oldEmbed)
-        .setColor("#f1c40f") 
-        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה נלקחה לטיפול על ידי ${titlePrefix} ${interaction.user}` });
+        .setColor("#2ecc71") 
+        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} (${interaction.user.username})` });
 
       await interaction.update({
         embeds: [updatedEmbed],
         components: [] 
       });
 
-      await interaction.channel.send({
-        content: `👋 <@${requesterId}>, ${titlePrefix} ${interaction.user} איתך עכשיו ומטפל בפנייה שלך!`
+      // 1. הודעה חשאית (Ephemeral) רק למי שלחץ על הכפתור
+      await interaction.followUp({
+        content: `✅ לקחת את קריאת העזרה של <@${requesterId}> בהצלחה. אנא פנה אליו בהקדם!`,
+        ephemeral: true
       });
+
+      // 2. שליחת הודעה פרטית (DM) למשתמש שביקש עזרה כדי "שלא כולם יראו" בצ'אט הכללי
+      const targetUser = await guild.members.fetch(requesterId).catch(() => null);
+      if (targetUser) {
+        await targetUser.send({
+          content: `👋 שלום, ${titlePrefix} **${interaction.user.username}** לקח אחריות על קריאת העזרה שלך בשרת והוא איתך עכשיו ומטפל בפנייה שלך!`
+        }).catch(() => {
+          console.log(`[Help System] Could not send DM to user ${requesterId} (DMs locked).`);
+        });
+      }
 
     } catch (err) { console.error("[Help Interaction Error]", err.message); }
   }
