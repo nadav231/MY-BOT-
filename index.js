@@ -77,6 +77,12 @@ const rolePriority = [
 const ALLOWED_DELETE_ROLE_ID = "1515409287676035228"; // הרול שעוקף את כל הגנות ה-Anti-Nuke
 const VERIFY_ROLE_ID = "1496911471915962552";        // רול ממבר (💸 Members)
 
+// הרולים המעודכנים ששלחת עכשיו (Staff ו-High Staff)
+const STAFF_ROLE_IDS = [
+  "1496911471915962555", // Staff
+  "1496911471928410218"  // High Staff
+]; 
+
 const MAX_ACTIONS_ALLOWED = 3; 
 const ACTION_RESET_TIME = 10000; 
 
@@ -95,22 +101,16 @@ const client = new Client({
 
 // ─── Helper Functions ────────────────────────────────────────────────────────
 
-// פונקציה שבודקת האם המשתמש עוקף את ההגנות (בעלים, בוט, או בעל הרול המיוחד)
 async function shouldBypass(guild, executorId) {
   if (executorId === guild.ownerId || executorId === client.user.id) return true;
-
   const member = await guild.members.fetch(executorId).catch(() => null);
   if (!member) return false;
-
-  // אם יש לו את הרול המורשה - הוא יכול לעקוף הכל
   return member.roles.cache.has(ALLOWED_DELETE_ROLE_ID);
 }
 
-// פונקציית ענישה אוטומטית
 async function punishUser(guild, executorId, reason) {
   try {
     if (executorId === guild.ownerId) return;
-    
     const member = await guild.members.fetch(executorId).catch(() => null);
     if (!member) return;
 
@@ -128,7 +128,6 @@ async function punishUser(guild, executorId, reason) {
   }
 }
 
-// בדיקת הצפות
 function isMassActionTriggered(userId, actionType) {
   const key = `${userId}_${actionType}`;
   const now = Date.now();
@@ -146,7 +145,6 @@ function isMassActionTriggered(userId, actionType) {
   return validTimestamps.length > MAX_ACTIONS_ALLOWED;
 }
 
-// ניקוי ועדכון כינויים
 async function updateMemberNickname(member) {
   let prefix = null;
   for (const roleId of rolePriority) {
@@ -186,36 +184,108 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   await updateMemberNickname(newMember).catch(() => null);
 });
 
-// פקודת פאנל האימות
+// פקודות טקסט
 client.on("messageCreate", async (message) => {
-  if (message.author.bot || message.content !== "verify.panel") return;
-  try {
-    await message.delete().catch(() => null);
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("verify_button").setLabel("אימות").setStyle(ButtonStyle.Success)
-    );
-    const embed = new EmbedBuilder()
-      .setTitle("מערכת אימות השרת")
-      .setDescription("לחץ על הכפתור למטה כדי לפתוח את החדרים בשרת ולקבל גישה!")
-      .setColor("#00ff00");
+  if (message.author.bot) return;
 
-    await message.channel.send({ embeds: [embed], components: [row] });
-  } catch (err) { console.error(err); }
+  // 1. פקודת פאנל האימות
+  if (message.content === "verify.panel") {
+    try {
+      await message.delete().catch(() => null);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("verify_button").setLabel("אימות").setStyle(ButtonStyle.Success)
+      );
+      const embed = new EmbedBuilder()
+        .setTitle("מערכת אימות השרת")
+        .setDescription("לחץ על הכפתור למטה כדי לפתוח את החדרים בשרת ולקבל גישה!")
+        .setColor("#00ff00");
+
+      await message.channel.send({ embeds: [embed], components: [row] });
+    } catch (err) { console.error(err); }
+    return;
+  }
+
+  // 2. פקודת מערכת העזרה (!h)
+  if (message.content.startsWith("!h")) {
+    try {
+      const args = message.content.slice(2).trim();
+      const reason = args.length > 0 ? args : "לא צוינה סיבה";
+
+      await message.delete().catch(() => null);
+
+      const embed = new EmbedBuilder()
+        .setTitle("🚨 קריאת עזרה חדשה!")
+        .setDescription(`המשתמש ${message.author} זקוק לעזרה של איש צוות במיידי.`)
+        .addFields({ name: "📝 הסיבה לפנייה:", value: `\`\`\`${reason}\`\`\`` })
+        .setColor("#ff0000")
+        .setTimestamp()
+        .setFooter({ text: `מזהה משתמש: ${message.author.id}` });
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`help_claim_${message.author.id}`)
+          .setLabel("🔒 קח אחריות על הקריאה")
+          .setStyle(ButtonStyle.Primary)
+      );
+
+      await message.channel.send({ embeds: [embed], components: [row] });
+    } catch (err) { console.error("[Help Command Error]", err.message); }
+  }
 });
 
+// אינטראקציות של כפתורים
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton() || interaction.customId !== "verify_button") return;
-  try {
-    const member = interaction.member;
-    if (member.roles.cache.has(VERIFY_ROLE_ID)) {
-      return await interaction.reply({ content: "אתה כבר מאומת בשרת!", ephemeral: true });
-    }
-    await member.roles.add(VERIFY_ROLE_ID);
-    await interaction.reply({ content: "אוממת בהצלחה קיבלת גישה לחדרים", ephemeral: true });
-  } catch (err) { console.error(err); }
+  if (!interaction.isButton()) return;
+
+  // א. כפתור האימות
+  if (interaction.customId === "verify_button") {
+    try {
+      const member = interaction.member;
+      if (member.roles.cache.has(VERIFY_ROLE_ID)) {
+        return await interaction.reply({ content: "אתה כבר מאומת בשרת!", ephemeral: true });
+      }
+      await member.roles.add(VERIFY_ROLE_ID);
+      await interaction.reply({ content: "אוממת בהצלחה קיבלת גישה לחדרים", ephemeral: true });
+    } catch (err) { console.error(err); }
+    return;
+  }
+
+  // ב. כפתור מענה לקריאת עזרה
+  if (interaction.customId.startsWith("help_claim_")) {
+    try {
+      const member = interaction.member;
+      
+      // בדיקה האם המשתמש שלחץ מחזיק באחד מרולי הצוות המעודכנים
+      const isStaff = STAFF_ROLE_IDS.some(roleId => member.roles.cache.has(roleId));
+      if (!isStaff) {
+        return await interaction.reply({
+          content: "❌ אינך מורשה לטפל בקריאות עזרה. כפתור זה מיועד לצוות הניהול בלבד!",
+          ephemeral: true
+        });
+      }
+
+      const requesterId = interaction.customId.split("_")[2];
+      
+      const oldEmbed = interaction.message.embeds[0];
+      const updatedEmbed = EmbedBuilder.from(oldEmbed)
+        .setColor("#f1c40f") 
+        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה נלקחה לטיפול על ידי ${interaction.user}` });
+
+      await interaction.update({
+        embeds: [updatedEmbed],
+        components: [] 
+      });
+
+      await interaction.channel.send({
+        content: `👋 <@${requesterId}>, המנהל ${interaction.user} איתך עכשיו ומטפל בפנייה שלך!`
+      });
+
+    } catch (err) { console.error("[Help Interaction Error]", err.message); }
+  }
 });
 
-// 1. הגנה מפני מחיקת חדרים / קטגוריות
+// ─── Anti-Nuke System Events ──────────────────────────────────────────────────
+
 client.on("channelDelete", async (channel) => {
   if (!channel.guild) return;
   try {
@@ -244,7 +314,6 @@ client.on("channelDelete", async (channel) => {
   } catch (err) { console.error(err.message); }
 });
 
-// 2. הגנה מפני יצירת חדרים המונית
 client.on("channelCreate", async (channel) => {
   if (!channel.guild) return;
   try {
@@ -262,7 +331,6 @@ client.on("channelCreate", async (channel) => {
   } catch (err) { console.error(err.message); }
 });
 
-// 3. הגנה מפני מחיקת רולים
 client.on("roleDelete", async (role) => {
   try {
     await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -286,7 +354,6 @@ client.on("roleDelete", async (role) => {
   } catch (err) { console.error(err.message); }
 });
 
-// 4. הגנה מפני יצירת רולים המונית
 client.on("roleCreate", async (role) => {
   try {
     const logs = await role.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleCreate });
@@ -303,7 +370,6 @@ client.on("roleCreate", async (role) => {
   } catch (err) { console.error(err.message); }
 });
 
-// 5. הגנות מתקדמות מבוססות Audit Log (הכוללות בדיקת מעקף של הרול)
 client.on("guildAuditLogEntryCreate", async (auditLogEntry, guild) => {
   try {
     const { action, executorId } = auditLogEntry;
