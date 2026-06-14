@@ -99,9 +99,8 @@ const TICKET_CLOSE_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
 // רולים שמקבלים תיוג (Ping) בפתיחת טיקט חדש (רק High Staff ו-Staff!)
 const TICKET_PING_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
 
-// מזהי חדרים וקטגוריות
+// מזהה קטגוריית הטיקטים
 const TICKET_CATEGORY_ID = "1496911473392222231";
-const WELCOME_CHANNEL_ID = "1496911473392222230"; // חדר הוולקום שלך
 
 const MAX_ACTIONS_ALLOWED = 3; 
 const ACTION_RESET_TIME = 10000; 
@@ -198,29 +197,6 @@ async function syncAllMembers() {
 client.once("ready", async () => {
   console.log(`[Bot] Online as ${client.user.tag}`);
   await syncAllMembers();
-});
-
-// מערכת וולקום - כניסת משתמש חדש לשרת
-client.on("guildMemberAdd", async (member) => {
-  try {
-    const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
-    if (!channel) return;
-
-    // ספירת כמות הממברס הנוכחית בשרת
-    const memberCount = member.guild.memberCount;
-
-    // יצירת הודעת מעוצבת (Embed) יפה לוולקום
-    const welcomeEmbed = new EmbedBuilder()
-      .setTitle("👋 ברוך הבא לשרת!")
-      .setDescription(`ברוכה הבאה לשרת לשרת שלנו מקווים שתהנה בשרת **PrimeZone** אתה המספר בשרת **${memberCount}** ואז השם שלו ${member}`)
-      .setColor("#00ffea")
-      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-      .setTimestamp();
-
-    await channel.send({ content: `${member}`, embeds: [welcomeEmbed] });
-  } catch (err) {
-    console.error("[Welcome System Error]", err.message);
-  }
 });
 
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
@@ -460,6 +436,7 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
+  // תוקן: לקיחת קריאת עזרה (!h) בצורה סודית ומניעת הודעות ספאם כלליות
   if (interaction.customId.startsWith("help_claim_")) {
     try {
       const member = interaction.member;
@@ -477,6 +454,7 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
+      // קביעת הטייטל של המנהל
       let titlePrefix = "איש צוות";
       if (interaction.user.id === guild.ownerId || member.roles.cache.has(OWNER_ROLE_ID)) {
         titlePrefix = "האוונר";
@@ -486,21 +464,24 @@ client.on("interactionCreate", async (interaction) => {
 
       const requesterId = interaction.customId.split("_")[2];
       
+      // עדכון ה-Embed המקורי בשרת (משנים צבע ומסירים כפתור כדי שלא ילחצו שוב)
       const oldEmbed = interaction.message.embeds[0];
       const updatedEmbed = EmbedBuilder.from(oldEmbed)
         .setColor("#2ecc71") 
-        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} ${interaction.user}` });
+        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} (${interaction.user.username})` });
 
       await interaction.update({
         embeds: [updatedEmbed],
         components: [] 
       });
 
+      // 1. הודעה חשאית (Ephemeral) רק למי שלחץ על הכפתור
       await interaction.followUp({
         content: `✅ לקחת את קריאת העזרה של <@${requesterId}> בהצלחה. אנא פנה אליו בהקדם!`,
         ephemeral: true
       });
 
+      // 2. שליחת הודעה פרטית (DM) למשתמש שביקש עזרה כדי "שלא כולם יראו" בצ'אט הכללי
       const targetUser = await guild.members.fetch(requesterId).catch(() => null);
       if (targetUser) {
         await targetUser.send({
