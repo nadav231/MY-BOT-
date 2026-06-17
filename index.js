@@ -102,7 +102,7 @@ const TICKET_PING_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
 // מזהי חדרים וקטגוריות
 const TICKET_CATEGORY_ID = "1496911473392222231";
 const WELCOME_CHANNEL_ID = "1496911473392222230"; 
-const XP_CHECK_CHANNEL_ID = "1516794753839009832"; // החדר היחיד המורשה לבדיקה
+const XP_CHECK_CHANNEL_ID = "1516794753839009832"; // החדר היחיד המורשה לבדיקת XP
 
 const MAX_ACTIONS_ALLOWED = 3; 
 const ACTION_RESET_TIME = 10000; 
@@ -274,8 +274,25 @@ client.on("messageCreate", async (message) => {
     addComponentsXP(message.author.id, 5);
   }
 
-  // פקודת !h לבדיקת אקס פי לעצמי או לאחרים
-  if (message.content.startsWith("!h")) {
+  // פקודת העזרה הישנה שחזרה למקומה המקורי על פקודת !h
+  if (message.content.startsWith("!h") && !message.content.startsWith("!h ")) {
+    try {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("call_staff").setLabel("קריאה לצוות").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("call_manager").setLabel("קריאה להנהלה").setStyle(ButtonStyle.Primary)
+      );
+      const embed = new EmbedBuilder()
+        .setTitle("תפריט עזרה קולית")
+        .setDescription("צריך עזרה בחדר הקולי? לחץ על הכפתור המתאים בשביל לקרוא לצוות או להנהלה.")
+        .setColor("#ff0000");
+
+      await message.channel.send({ embeds: [embed], components: [row] });
+    } catch (err) { console.error(err); }
+    return;
+  }
+
+  // פקודת !xp לבדיקת אקס פי לעצמי או לאחרים (במקום !h הישנה)
+  if (message.content.startsWith("!xp")) {
     try {
       const member = message.member;
       const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
@@ -289,7 +306,7 @@ client.on("messageCreate", async (message) => {
 
       const target = message.mentions.members.first();
 
-      // אם יש תיוג של מישהו אחר (!h @user), מוודאים שרק צוות יכול לבדוק
+      // אם יש תיוג של מישהו אחר (!xp @user), מוודאים שרק צוות יכול לבדוק
       if (target && target.id !== member.id) {
         const isStaff = member.roles.cache.has(STAFF_ROLE_ID) || member.roles.cache.has(HIGH_STAFF_ROLE_ID) || message.author.id === message.guild.ownerId;
         if (!hasAdmin && !isStaff) {
@@ -297,7 +314,7 @@ client.on("messageCreate", async (message) => {
         }
       }
 
-      // אם לא תויג אף אחד, הבדיקה היא לעצמו (!h)
+      // אם לא תויג אף אחד, הבדיקה היא לעצמו (!xp)
       const finalTarget = target || member;
       const totalXp = Math.floor(getUserXP(finalTarget.id));
 
@@ -642,7 +659,7 @@ client.on("roleDelete", async (role) => {
     });
 
     await punishUser(role.guild, executor.id, `Deleted server role: ${role.name}`);
-  } catch (err) { console.error(err.message); }
+  } catch (err) { console.error(role.message); }
 });
 
 client.on("roleCreate", async (role) => {
