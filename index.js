@@ -99,13 +99,18 @@ const TICKET_CLOSE_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
 // רולים שמקבלים תיוג (Ping) בפתיחת טיקט חדש (רק High Staff ו-Staff!)
 const TICKET_PING_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
 
-// מזהה קטגוריית הטיקטים
+// מזהי חדרים וקטגוריות
 const TICKET_CATEGORY_ID = "1496911473392222231";
+const WELCOME_CHANNEL_ID = "1496911473392222230"; 
+const XP_CHECK_CHANNEL_ID = "1516794753839009832"; // החדר היחיד המורשה לבדיקה
 
 const MAX_ACTIONS_ALLOWED = 3; 
 const ACTION_RESET_TIME = 10000; 
 
 const userActionLog = new Map();
+
+// בסיס נתונים זמני בזיכרון עבור מערכת ה-XP
+const xpDatabase = new Map();
 
 const client = new Client({
   intents: [
@@ -115,10 +120,23 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildExpressions,
+    GatewayIntentBits.GuildVoiceStates,
   ],
 });
 
 // ─── Helper Functions ────────────────────────────────────────────────────────
+
+function getUserXP(userId) {
+  if (!xpDatabase.has(userId)) {
+    xpDatabase.set(userId, 0);
+  }
+  return xpDatabase.get(userId);
+}
+
+function addComponentsXP(userId, amount) {
+  const currentXp = getUserXP(userId);
+  xpDatabase.set(userId, Math.max(0, currentXp + amount));
+}
 
 async function shouldBypass(guild, executorId) {
   if (executorId === guild.ownerId || executorId === client.user.id) return true;
@@ -192,6 +210,29 @@ async function syncAllMembers() {
   }
 }
 
+// ─── Loops / Timers ──────────────────────────────────────────────────────────
+
+// מערכת XP קולית - טיימר הרץ כל 60 שניות (דקה אחת)
+setInterval(() => {
+  try {
+    client.guilds.cache.forEach(guild => {
+      guild.channels.cache.forEach(channel => {
+        if (channel.type === ChannelType.GuildVoice && channel.members.size > 1) {
+          channel.members.forEach(member => {
+            if (member.user.bot || member.voice.selfMute || member.voice.selfDeaf) return;
+
+            // 3 דקות = 100 XP, לכן דקה 1 = 33.33 XP
+            const xpPerMinute = 100 / 3;
+            addComponentsXP(member.id, xpPerMinute);
+          });
+        }
+      });
+    });
+  } catch (err) {
+    console.error("[Voice XP Loop Error]", err.message);
+  }
+}, 60000);
+
 // ─── Events ───────────────────────────────────────────────────────────────────
 
 client.once("ready", async () => {
@@ -199,14 +240,132 @@ client.once("ready", async () => {
   await syncAllMembers();
 });
 
+// מערכת וולקום - כניסת משתמש חדש לשרת
+client.on("guildMemberAdd", async (member) => {
+  try {
+    const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
+    if (!channel) return;
+
+    const memberCount = member.guild.memberCount;
+
+    const welcomeEmbed = new EmbedBuilder()
+      .setTitle("👋 ברוך הבא לשרת!")
+      .setDescription(`ברוכה הבאה לשרת לשרת שלנו מקווים שתהנה בשרת **PrimeZone** אתה המספר בשרת **${memberCount}** ואז השם שלו ${member}`)
+      .setColor("#00ffea")
+      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+      .setTimestamp();
+
+    await channel.send({ content: `${member}`, embeds: [welcomeEmbed] });
+  } catch (err) {
+    console.error("[Welcome System Error]", err.message);
+  }
+});
+
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
   await updateMemberNickname(newMember).catch(() => null);
 });
 
-// פקודות טקסט
+// פקודות טקסט ומערכת הודעות XP
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
+  // הוספת 5 XP על כל הודעה שנשלחת בצורה אוטומטית
+  if (message.guild) {
+    addComponentsXP(message.author.id, 5);
+  }
+
+  // פקודת !h לבדיקת אקס פי לעצמי או לאחרים
+  if (message.content.startsWith("!h")) {
+    try {
+      const member = message.member;
+      const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+
+      // הגבלת חדר קשוחה: לא מאפשר לאף אחד חוץ מאדמיניסטרטורים להשתמש מחוץ לחדר ה-XP
+      if (message.channel.id !== XP_CHECK_CHANNEL_ID && !hasAdmin) {
+        const warning = await message.reply("❌ ניתן להשתמש בפקודה הזו רק בחדר בדיקת ה-XP הייעודי!");
+        setTimeout(() => { message.delete().catch(() => null); warning.delete().catch(() => null); }, 5000);
+        return;
+      }
+
+      const target = message.mentions.members.first();
+
+      // אם יש תיוג של מישהו אחר (!h @user), מוודאים שרק צוות יכול לבדוק
+      if (target && target.id !== member.id) {
+        const isStaff = member.roles.cache.has(STAFF_ROLE_ID) || member.roles.cache.has(HIGH_STAFF_ROLE_ID) || message.author.id === message.guild.ownerId;
+        if (!hasAdmin && !isStaff) {
+          return await message.reply("❌ רק דרגות Staff ,High Staff או Administrator מורשים לבדוק XP של משתמשים אחרים!");
+        }
+      }
+
+      // אם לא תויג אף אחד, הבדיקה היא לעצמו (!h)
+      const finalTarget = target || member;
+      const totalXp = Math.floor(getUserXP(finalTarget.id));
+
+      const xpEmbed = new EmbedBuilder()
+        .setTitle("📊 סטטיסטיקת XP")
+        .setDescription(finalTarget.id === member.id 
+          ? `יש לך כעת **${totalXp.toLocaleString()} XP** בשרת.`
+          : `המשתמש ${finalTarget} מחזיק כעת ב-**${totalXp.toLocaleString()} XP** בשרת.`
+        )
+        .setColor("#f1c40f")
+        .setTimestamp();
+
+      await message.channel.send({ embeds: [xpEmbed] });
+    } catch (err) { console.error(err); }
+    return;
+  }
+
+  // פקודת !addxp @user [כמות] (הנהלה בלבד)
+  if (message.content.startsWith("!addxp")) {
+    try {
+      const member = message.member;
+      const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+      const isManagement = member.roles.cache.has(OWNER_ROLE_ID) || member.roles.cache.has(CO_OWNER_ROLE_ID) || message.author.id === message.guild.ownerId;
+
+      if (!hasAdmin && !isManagement) {
+        return await message.reply("❌ רק Owner, Co-Owner או מנהלים עם הרשאת Administrator מורשים להוסיף XP!");
+      }
+
+      const args = message.content.split(" ");
+      const target = message.mentions.members.first();
+      const amount = parseInt(args[2]);
+
+      if (!target || isNaN(amount) || amount <= 0) {
+        return await message.reply("❌ שימוש שגוי בפקודה. מבנה נכון: `!addxp @שם_משתמש [כמות]`");
+      }
+
+      addComponentsXP(target.id, amount);
+      await message.reply(`✅ נוספו בהצלחה **${amount.toLocaleString()} XP** למשתמש ${target}. סך הכל כעת: **${Math.floor(getUserXP(target.id)).toLocaleString()} XP**.`);
+    } catch (err) { console.error(err); }
+    return;
+  }
+
+  // פקודת !removexp @user [כמות] (הנהלה בלבד)
+  if (message.content.startsWith("!removexp")) {
+    try {
+      const member = message.member;
+      const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+      const isManagement = member.roles.cache.has(OWNER_ROLE_ID) || member.roles.cache.has(CO_OWNER_ROLE_ID) || message.author.id === message.guild.ownerId;
+
+      if (!hasAdmin && !isManagement) {
+        return await message.reply("❌ רק Owner, Co-Owner או מנהלים עם הרשאת Administrator מורשים להוריד XP!");
+      }
+
+      const args = message.content.split(" ");
+      const target = message.mentions.members.first();
+      const amount = parseInt(args[2]);
+
+      if (!target || isNaN(amount) || amount <= 0) {
+        return await message.reply("❌ שימוש שגוי בפקודה. מבנה נכון: `!removexp @שם_משתמש [כמות]`");
+      }
+
+      addComponentsXP(target.id, -amount);
+      await message.reply(`🔻 הוסרו בהצלחה **${amount.toLocaleString()} XP** מהמשתמש ${target}. סך הכל כעת: **${Math.floor(getUserXP(target.id)).toLocaleString()} XP**.`);
+    } catch (err) { console.error(err); }
+    return;
+  }
+
+  // פאנל אימות (Verify)
   if (message.content === "verify.panel") {
     try {
       await message.delete().catch(() => null);
@@ -223,6 +382,7 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  // פאנל טיקטים (Ticket)
   if (message.content === "ticket.panl" || message.content === "ticket.panel") {
     try {
       await message.delete().catch(() => null);
@@ -243,35 +403,9 @@ client.on("messageCreate", async (message) => {
     } catch (err) { console.error("[Ticket Panel Error]", err.message); }
     return;
   }
-
-  if (message.content.startsWith("!h")) {
-    try {
-      const args = message.content.slice(2).trim();
-      const reason = args.length > 0 ? args : "לא צוינה סיבה";
-
-      await message.delete().catch(() => null);
-
-      const embed = new EmbedBuilder()
-        .setTitle("🚨 קריאת עזרה חדשה!")
-        .setDescription(`המשתמש ${message.author} זקוק לעזרה של איש צוות במיידי.`)
-        .addFields({ name: "📝 הסיבה לפנייה:", value: `\`\`\`${reason}\`\`\`` })
-        .setColor("#ff0000")
-        .setTimestamp()
-        .setFooter({ text: `מזהה משתמש: ${message.author.id}` });
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`help_claim_${message.author.id}`)
-          .setLabel("🔒 קח אחריות על הקריאה")
-          .setStyle(ButtonStyle.Primary)
-      );
-
-      await message.channel.send({ embeds: [embed], components: [row] });
-    } catch (err) { console.error("[Help Command Error]", err.message); }
-  }
 });
 
-// אינטראקציות
+// אינטראקציות (Buttons / Select Menus)
 client.on("interactionCreate", async (interaction) => {
   
   if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type_select") {
@@ -434,64 +568,6 @@ client.on("interactionCreate", async (interaction) => {
       await interaction.reply({ content: "אוממת בהצלחה קיבלת גישה לחדרים", ephemeral: true });
     } catch (err) { console.error(err); }
     return;
-  }
-
-  // תוקן: לקיחת קריאת עזרה (!h) בצורה סודית ומניעת הודעות ספאם כלליות
-  if (interaction.customId.startsWith("help_claim_")) {
-    try {
-      const member = interaction.member;
-      const guild = interaction.guild;
-      
-      const hasPermission = 
-        ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || 
-        interaction.user.id === guild.ownerId ||
-        member.permissions.has(PermissionFlagsBits.Administrator);
-
-      if (!hasPermission) {
-        return await interaction.reply({
-          content: "❌ אינך מורשה לטפל בקריאות עזרה. כפתור זה מיועד לצוות הניהול בלבד!",
-          ephemeral: true
-        });
-      }
-
-      // קביעת הטייטל של המנהל
-      let titlePrefix = "איש צוות";
-      if (interaction.user.id === guild.ownerId || member.roles.cache.has(OWNER_ROLE_ID)) {
-        titlePrefix = "האוונר";
-      } else if (member.roles.cache.has(CO_OWNER_ROLE_ID)) {
-        titlePrefix = "הקו-אוונר";
-      }
-
-      const requesterId = interaction.customId.split("_")[2];
-      
-      // עדכון ה-Embed המקורי בשרת (משנים צבע ומסירים כפתור כדי שלא ילחצו שוב)
-      const oldEmbed = interaction.message.embeds[0];
-      const updatedEmbed = EmbedBuilder.from(oldEmbed)
-        .setColor("#2ecc71") 
-        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} (${interaction.user.username})` });
-
-      await interaction.update({
-        embeds: [updatedEmbed],
-        components: [] 
-      });
-
-      // 1. הודעה חשאית (Ephemeral) רק למי שלחץ על הכפתור
-      await interaction.followUp({
-        content: `✅ לקחת את קריאת העזרה של <@${requesterId}> בהצלחה. אנא פנה אליו בהקדם!`,
-        ephemeral: true
-      });
-
-      // 2. שליחת הודעה פרטית (DM) למשתמש שביקש עזרה כדי "שלא כולם יראו" בצ'אט הכללי
-      const targetUser = await guild.members.fetch(requesterId).catch(() => null);
-      if (targetUser) {
-        await targetUser.send({
-          content: `👋 שלום, ${titlePrefix} **${interaction.user.username}** לקח אחריות על קריאת העזרה שלך בשרת והוא איתך עכשיו ומטפל בפנייה שלך!`
-        }).catch(() => {
-          console.log(`[Help System] Could not send DM to user ${requesterId} (DMs locked).`);
-        });
-      }
-
-    } catch (err) { console.error("[Help Interaction Error]", err.message); }
   }
 });
 
