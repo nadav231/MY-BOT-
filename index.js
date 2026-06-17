@@ -109,7 +109,7 @@ const ACTION_RESET_TIME = 10000;
 
 const userActionLog = new Map();
 
-// בסיס נתונים זמני בזיכרון עבור מערכת ה-XP
+// בסיס נתונים בזיכרון למערכת ה-XP
 const xpDatabase = new Map();
 
 const client = new Client({
@@ -265,39 +265,59 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   await updateMemberNickname(newMember).catch(() => null);
 });
 
-// פקודות טקסט ומערכת הודעות XP
+// פקודות טקסט
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // הוספת 5 XP על כל הודעה שנשלחת בצורה אוטומטית
+  // הוספת 5 XP על כל הודעה בצורה אוטומטית לכל המשתמשים
   if (message.guild) {
     addComponentsXP(message.author.id, 5);
   }
 
-  // פקודת העזרה הישנה שחזרה למקומה המקורי על פקודת !h
-  if (message.content.startsWith("!h") && !message.content.startsWith("!h ")) {
+  if (message.content === "verify.panel") {
     try {
+      await message.delete().catch(() => null);
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("call_staff").setLabel("קריאה לצוות").setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId("call_manager").setLabel("קריאה להנהלה").setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId("verify_button").setLabel("אימות").setStyle(ButtonStyle.Success)
       );
       const embed = new EmbedBuilder()
-        .setTitle("תפריט עזרה קולית")
-        .setDescription("צריך עזרה בחדר הקולי? לחץ על הכפתור המתאים בשביל לקרוא לצוות או להנהלה.")
-        .setColor("#ff0000");
+        .setTitle("מערכת אימות השרת")
+        .setDescription("לחץ על הכפתור למטה כדי לפתוח את החדרים בשרת ולקבל גישה!")
+        .setColor("#00ff00");
 
       await message.channel.send({ embeds: [embed], components: [row] });
     } catch (err) { console.error(err); }
     return;
   }
 
-  // פקודת !xp לבדיקת אקס פי לעצמי או לאחרים (במקום !h הישנה)
+  if (message.content === "ticket.panl" || message.content === "ticket.panel") {
+    try {
+      await message.delete().catch(() => null);
+      
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("ticket_open_init")
+          .setLabel("📩 לחץ כאן לפתיחת טיקט")
+          .setStyle(ButtonStyle.Primary)
+      );
+
+      const embed = new EmbedBuilder()
+        .setTitle("מערכת הטיקטים והתמיכה")
+        .setDescription("צריך עזרה, רוצה להגיש תלונה או להציע שיתוף פעולה? לחץ על הכפתור למטה ובחר את נושא הפנייה שלך.")
+        .setColor("#2f3136");
+
+      await message.channel.send({ embeds: [embed], components: [row] });
+    } catch (err) { console.error("[Ticket Panel Error]", err.message); }
+    return;
+  }
+
+  // פקודת !xp החדשה לבדיקת אקס פי לעצמי או לאחרים
   if (message.content.startsWith("!xp")) {
     try {
       const member = message.member;
       const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
 
-      // הגבלת חדר קשוחה: לא מאפשר לאף אחד חוץ מאדמיניסטרטורים להשתמש מחוץ לחדר ה-XP
+      // הגבלת חדר קשוחה לחדר ה-XP
       if (message.channel.id !== XP_CHECK_CHANNEL_ID && !hasAdmin) {
         const warning = await message.reply("❌ ניתן להשתמש בפקודה הזו רק בחדר בדיקת ה-XP הייעודי!");
         setTimeout(() => { message.delete().catch(() => null); warning.delete().catch(() => null); }, 5000);
@@ -314,7 +334,6 @@ client.on("messageCreate", async (message) => {
         }
       }
 
-      // אם לא תויג אף אחד, הבדיקה היא לעצמו (!xp)
       const finalTarget = target || member;
       const totalXp = Math.floor(getUserXP(finalTarget.id));
 
@@ -382,43 +401,31 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // פאנל אימות (Verify)
-  if (message.content === "verify.panel") {
+  // פקודת !h המקורית והישנה שלך - נשמרה בדיוק כפי שהייתה
+  if (message.content.startsWith("!h")) {
     try {
+      const args = message.content.slice(2).trim();
+      const reason = args.length > 0 ? args : "לא צוינה סיבה";
+
       await message.delete().catch(() => null);
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("verify_button").setLabel("אימות").setStyle(ButtonStyle.Success)
-      );
+
       const embed = new EmbedBuilder()
-        .setTitle("מערכת אימות השרת")
-        .setDescription("לחץ על הכפתור למטה כדי לפתוח את החדרים בשרת ולקבל גישה!")
-        .setColor("#00ff00");
+        .setTitle("🚨 קריאת עזרה חדשה!")
+        .setDescription(`המשתמש ${message.author} זקוק לעזרה של איש צוות במיידי.`)
+        .addFields({ name: "📝 הסיבה לפנייה:", value: `\`\`\`${reason}\`\`\`` })
+        .setColor("#ff0000")
+        .setTimestamp()
+        .setFooter({ text: `מזהה משתמש: ${message.author.id}` });
 
-      await message.channel.send({ embeds: [embed], components: [row] });
-    } catch (err) { console.error(err); }
-    return;
-  }
-
-  // פאנל טיקטים (Ticket)
-  if (message.content === "ticket.panl" || message.content === "ticket.panel") {
-    try {
-      await message.delete().catch(() => null);
-      
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId("ticket_open_init")
-          .setLabel("📩 לחץ כאן לפתיחת טיקט")
+          .setCustomId(`help_claim_${message.author.id}`)
+          .setLabel("🔒 קח אחריות על הקריאה")
           .setStyle(ButtonStyle.Primary)
       );
 
-      const embed = new EmbedBuilder()
-        .setTitle("מערכת הטיקטים והתמיכה")
-        .setDescription("צריך עזרה, רוצה להגיש תלונה או להציע שיתוף פעולה? לחץ על הכפתור למטה ובחר את נושא הפנייה שלך.")
-        .setColor("#2f3136");
-
       await message.channel.send({ embeds: [embed], components: [row] });
-    } catch (err) { console.error("[Ticket Panel Error]", err.message); }
-    return;
+    } catch (err) { console.error("[Help Command Error]", err.message); }
   }
 });
 
@@ -586,6 +593,59 @@ client.on("interactionCreate", async (interaction) => {
     } catch (err) { console.error(err); }
     return;
   }
+
+  if (interaction.customId.startsWith("help_claim_")) {
+    try {
+      const member = interaction.member;
+      const guild = interaction.guild;
+      
+      const hasPermission = 
+        ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || 
+        interaction.user.id === guild.ownerId ||
+        member.permissions.has(PermissionFlagsBits.Administrator);
+
+      if (!hasPermission) {
+        return await interaction.reply({
+          content: "❌ אינך מורשה לטפל בקריאות עזרה. כפתור זה מיועד לצוות הניהול בלבד!",
+          ephemeral: true
+        });
+      }
+
+      let titlePrefix = "איש צוות";
+      if (interaction.user.id === guild.ownerId || member.roles.cache.has(OWNER_ROLE_ID)) {
+        titlePrefix = "האוונר";
+      } else if (member.roles.cache.has(CO_OWNER_ROLE_ID)) {
+        titlePrefix = "הקו-אוונר";
+      }
+
+      const requesterId = interaction.customId.split("_")[2];
+      
+      const oldEmbed = interaction.message.embeds[0];
+      const updatedEmbed = EmbedBuilder.from(oldEmbed)
+        .setColor("#2ecc71") 
+        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} ${interaction.user}` });
+
+      await interaction.update({
+        embeds: [updatedEmbed],
+        components: [] 
+      });
+
+      await interaction.followUp({
+        content: `✅ לקחת את קריאת העזרה של <@${requesterId}> בהצלחה. אנא פנה אליו בהקדם!`,
+        ephemeral: true
+      });
+
+      const targetUser = await guild.members.fetch(requesterId).catch(() => null);
+      if (targetUser) {
+        await targetUser.send({
+          content: `👋 שלום, ${titlePrefix} **${interaction.user.username}** לקח אחריות על קריאת העזרה שלך בשרת והוא איתך עכשיו ומטפל בפנייה שלך!`
+        }).catch(() => {
+          console.log(`[Help System] Could not send DM to user ${requesterId} (DMs locked).`);
+        });
+      }
+
+    } catch (err) { console.error("[Help Interaction Error]", err.message); }
+  }
 });
 
 // ─── Anti-Nuke System Events ──────────────────────────────────────────────────
@@ -659,7 +719,7 @@ client.on("roleDelete", async (role) => {
     });
 
     await punishUser(role.guild, executor.id, `Deleted server role: ${role.name}`);
-  } catch (err) { console.error(role.message); }
+  } catch (err) { console.error(err.message); }
 });
 
 client.on("roleCreate", async (role) => {
