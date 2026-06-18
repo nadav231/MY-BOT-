@@ -103,6 +103,7 @@ const TICKET_PING_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
 const TICKET_CATEGORY_ID = "1496911473392222231";
 const WELCOME_CHANNEL_ID = "1496911473392222230"; 
 const XP_CHECK_CHANNEL_ID = "1516794753839009832"; // החדר היחיד המורשה לבדיקת XP
+const STAFF_LOGS_CHANNEL_ID = "1496911473203613698"; // חדר תיעוד פקודות הנהלה מוגן
 
 const MAX_ACTIONS_ALLOWED = 3; 
 const ACTION_RESET_TIME = 10000; 
@@ -265,6 +266,26 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   await updateMemberNickname(newMember).catch(() => null);
 });
 
+// מערכת שחזור הודעות לוג - מחזירה את ההודעה שנמחקה ללא ענישה
+client.on("messageDelete", async (message) => {
+  if (!message.guild || message.channel.id !== STAFF_LOGS_CHANNEL_ID) return;
+
+  // אם ההודעה שנמחקה נשלחה על ידי הבוט ויש בה Embed (לוג פקודה)
+  if (message.author?.id === client.user.id && message.embeds.length > 0) {
+    try {
+      const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
+      if (logChannel) {
+        const recoveredEmbed = EmbedBuilder.from(message.embeds[0]);
+        recoveredEmbed.setFooter({ text: "🛡️ הודעה זו שוחזרה אוטומטית לאחר ניסיון מחיקה!" });
+        
+        await logChannel.send({ embeds: [recoveredEmbed] });
+      }
+    } catch (err) {
+      console.error("[Log Recovery Error]", err.message);
+    }
+  }
+});
+
 // פקודות טקסט
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
@@ -372,6 +393,23 @@ client.on("messageCreate", async (message) => {
 
       addComponentsXP(target.id, amount);
       await message.reply(`✅ נוספו בהצלחה **${amount.toLocaleString()} XP** למשתמש ${target}. סך הכל כעת: **${Math.floor(getUserXP(target.id)).toLocaleString()} XP**.`);
+
+      // שילוח לוג לחדר הניהול המוגן
+      const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
+      if (logChannel) {
+        const logEmbed = new EmbedBuilder()
+          .setTitle("➕ הוספת XP על ידי מנהל")
+          .setColor("#2ecc71")
+          .addFields(
+            { name: "👮 המנהל המבצע:", value: `${message.author} (${message.author.id})`, inline: true },
+            { name: "👤 המשתמש שקיבל:", value: `${target} (${target.id})`, inline: true },
+            { name: "💰 כמות ה-XP שנוספה:", value: `**${amount.toLocaleString()}** XP`, inline: false },
+            { name: "📊 סך הכל חדש:", value: `**${Math.floor(getUserXP(target.id)).toLocaleString()}** XP`, inline: false }
+          )
+          .setTimestamp();
+        await logChannel.send({ embeds: [logEmbed] });
+      }
+
     } catch (err) { console.error(err); }
     return;
   }
@@ -397,6 +435,23 @@ client.on("messageCreate", async (message) => {
 
       addComponentsXP(target.id, -amount);
       await message.reply(`🔻 הוסרו בהצלחה **${amount.toLocaleString()} XP** מהמשתמש ${target}. סך הכל כעת: **${Math.floor(getUserXP(target.id)).toLocaleString()} XP**.`);
+
+      // שילוח לוג לחדר הניהול המוגן
+      const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
+      if (logChannel) {
+        const logEmbed = new EmbedBuilder()
+          .setTitle("➖ הסרת XP על ידי מנהל")
+          .setColor("#e74c3c")
+          .addFields(
+            { name: "👮 המנהל המבצע:", value: `${message.author} (${message.author.id})`, inline: true },
+            { name: "👤 המשתמש שספג:", value: `${target} (${target.id})`, inline: true },
+            { name: "📉 כמות ה-XP שהוסרה:", value: `**${amount.toLocaleString()}** XP`, inline: false },
+            { name: "📊 סך הכל חדש:", value: `**${Math.floor(getUserXP(target.id)).toLocaleString()}** XP`, inline: false }
+          )
+          .setTimestamp();
+        await logChannel.send({ embeds: [logEmbed] });
+      }
+
     } catch (err) { console.error(err); }
     return;
   }
