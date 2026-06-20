@@ -101,7 +101,6 @@ const TICKET_PING_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
 
 // מזהי חדרים וקטגוריות
 const TICKET_CATEGORY_ID = "1496911473392222231";
-const WELCOME_CHANNEL_ID = "1496911473392222230"; 
 const XP_CHECK_CHANNEL_ID = "1516794753839009832"; // החדר היחיד המורשה לבדיקת XP
 const STAFF_LOGS_CHANNEL_ID = "1496911473203613698"; // חדר תיעוד פקודות הנהלה מוגן
 
@@ -137,6 +136,10 @@ function getUserXP(userId) {
 function addComponentsXP(userId, amount) {
   const currentXp = getUserXP(userId);
   xpDatabase.set(userId, Math.max(0, currentXp + amount));
+}
+
+function resetUserXP(userId) {
+  xpDatabase.set(userId, 0);
 }
 
 async function shouldBypass(guild, executorId) {
@@ -241,27 +244,6 @@ client.once("ready", async () => {
   await syncAllMembers();
 });
 
-// מערכת וולקום - כניסת משתמש חדש לשרת
-client.on("guildMemberAdd", async (member) => {
-  try {
-    const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
-    if (!channel) return;
-
-    const memberCount = member.guild.memberCount;
-
-    const welcomeEmbed = new EmbedBuilder()
-      .setTitle("👋 ברוך הבא לשרת!")
-      .setDescription(`ברוכה הבאה לשרת לשרת שלנו מקווים שתהנה בשרת **PrimeZone** אתה המספר בשרת **${memberCount}** ואז השם שלו ${member}`)
-      .setColor("#00ffea")
-      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-      .setTimestamp();
-
-    await channel.send({ content: `${member}`, embeds: [welcomeEmbed] });
-  } catch (err) {
-    console.error("[Welcome System Error]", err.message);
-  }
-});
-
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
   await updateMemberNickname(newMember).catch(() => null);
 });
@@ -332,7 +314,7 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // פקודת !xp החדשה לבדיקת אקס פי לעצמי או לאחרים
+  // פקודת !xp לבדיקת אקס פי לעצמי או לאחרים
   if (message.content.startsWith("!xp")) {
     try {
       const member = message.member;
@@ -456,7 +438,49 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // פקודת !h המקורית והישנה שלך - נשמרה בדיוק כפי שהייתה
+  // פקודת !resetxp @user לאיפוס מוחלט של ה-XP (הנהלה בלבד)
+  if (message.content.startsWith("!resetxp")) {
+    try {
+      const member = message.member;
+      const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+      const isManagement = member.roles.cache.has(OWNER_ROLE_ID) || member.roles.cache.has(CO_OWNER_ROLE_ID) || message.author.id === message.guild.ownerId;
+
+      if (!hasAdmin && !isManagement) {
+        return await message.reply("❌ רק Owner, Co-Owner או מנהלים עם הרשאת Administrator מורשים לאפס XP!");
+      }
+
+      const target = message.mentions.members.first();
+
+      if (!target) {
+        return await message.reply("❌ שימוש שגוי בפקודה. מבנה נכון: `!resetxp @שם_משתמש`");
+      }
+
+      const currentXpBeforeReset = Math.floor(getUserXP(target.id));
+      resetUserXP(target.id);
+      
+      await message.reply(`🔄 ה-XP של המשתמש ${target} אופס לחלוטין ל-**0**! (היו לו **${currentXpBeforeReset.toLocaleString()}** XP לפני האיפוס).`);
+
+      // שילוח לוג לחדר הניהול המוגן
+      const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
+      if (logChannel) {
+        const logEmbed = new EmbedBuilder()
+          .setTitle("🔄 איפוס מוחלט של XP")
+          .setColor("#3498db")
+          .addFields(
+            { name: "👮 המנהל המבצע:", value: `${message.author} (${message.author.id})`, inline: true },
+            { name: "👤 המשתמש שאיפסו לו:", value: `${target} (${target.id})`, inline: true },
+            { name: "📉 כמות שהייתה לפני האיפוס:", value: `**${currentXpBeforeReset.toLocaleString()}** XP`, inline: false },
+            { name: "📊 סך הכל חדש:", value: "**0** XP", inline: false }
+          )
+          .setTimestamp();
+        await logChannel.send({ embeds: [logEmbed] });
+      }
+
+    } catch (err) { console.error(err); }
+    return;
+  }
+
+  // פקודת !h המקורית והישנה שלך
   if (message.content.startsWith("!h")) {
     try {
       const args = message.content.slice(2).trim();
