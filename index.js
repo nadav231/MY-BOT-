@@ -104,6 +104,15 @@ const TICKET_CATEGORY_ID = "1496911473392222231";
 const XP_CHECK_CHANNEL_ID = "1516794753839009832"; // החדר היחיד המורשה לבדיקת XP
 const STAFF_LOGS_CHANNEL_ID = "1496911473203613698"; // חדר תיעוד פקודות הנהלה מוגן
 
+// קונפיגורציית חנות הרולים (מזהים ומחירים)
+const SHOP_ROLES = {
+  mythic: { id: "1521150272443777214", price: 30000, name: "Mythic", emoji: "💠" },
+  legend: { id: "1521150426534117457", price: 25000, name: "Legend", emoji: "👑" },
+  elite: { id: "1521150497380106391", price: 20000, name: "Elite", emoji: "⚡" },
+  rookie: { id: "1521150756743286804", price: 10000, name: "Rookie", emoji: "🌟" },
+  pro_player: { id: "1521150590376480858", price: 5000, name: "Pro Player", emoji: "🔥" }
+};
+
 const MAX_ACTIONS_ALLOWED = 3; 
 const ACTION_RESET_TIME = 10000; 
 
@@ -252,7 +261,6 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 client.on("messageDelete", async (message) => {
   if (!message.guild || message.channel.id !== STAFF_LOGS_CHANNEL_ID) return;
 
-  // אם ההודעה שנמחקה נשלחה על ידי הבוט ויש בה Embed (לוג פקודה)
   if (message.author?.id === client.user.id && message.embeds.length > 0) {
     try {
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
@@ -314,13 +322,57 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  // פקודה חדשה לפתיחת פאנל חנות הרולים בשרת
+  if (message.content === "shop.panel") {
+    try {
+      const member = message.member;
+      const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+      if (!hasAdmin && message.author.id !== message.guild.ownerId) {
+        return await message.reply("❌ רק מנהלים עם הרשאת Administrator מורשים להציב את פאנל החנות!");
+      }
+
+      await message.delete().catch(() => null);
+
+      const shopEmbed = new EmbedBuilder()
+        .setTitle("🛒 חנות הרולים הרשמית של השרת")
+        .setDescription(
+          "כאן תוכלו להמיר את ה-XP שצברתם בצ'אטים ובחדרים הקוליים לרולים ייחודיים ומטורפים בשרת!\n\n" +
+          "**📜 מחירון הרולים הרשמי:**\n" +
+          `💠 <@&${SHOP_ROLES.mythic.id}> — **${SHOP_ROLES.mythic.price.toLocaleString()}** XP\n` +
+          `👑 <@&${SHOP_ROLES.legend.id}> — **${SHOP_ROLES.legend.price.toLocaleString()}** XP\n` +
+          `⚡ <@&${SHOP_ROLES.elite.id}> — **${SHOP_ROLES.elite.price.toLocaleString()}** XP\n` +
+          `🌟 <@&${SHOP_ROLES.rookie.id}> — **${SHOP_ROLES.rookie.price.toLocaleString()}** XP\n` +
+          `🔥 <@&${SHOP_ROLES.pro_player.id}> — **${SHOP_ROLES.pro_player.price.toLocaleString()}** XP\n\n` +
+          "⚠️ **שים לב וקרא היטב:**\n" +
+          "**תוכלו לקנות רולים, אין החזר אלא אם לחצתם בטעות לא יודע!** ברגע שלחצתם וקניתם - ה-XP יורד ישירות מהחשבון שלכם ולא ניתן יהיה לקבלו חזרה. ודאו היטב שאתם בוחרים את הרול הנכון שאתם רוצים."
+        )
+        .setColor("#9b59b6")
+        .setFooter({ text: "תתחדשו! • מערכת הרולים האוטומטית" });
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId("shop_role_select")
+        .setPlaceholder("🛒 בחר תפקיד לקנייה...")
+        .addOptions(
+          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.mythic.name} (${SHOP_ROLES.mythic.price.toLocaleString()} XP)`).setValue("mythic").setEmoji(SHOP_ROLES.mythic.emoji),
+          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.legend.name} (${SHOP_ROLES.legend.price.toLocaleString()} XP)`).setValue("legend").setEmoji(SHOP_ROLES.legend.emoji),
+          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.elite.name} (${SHOP_ROLES.elite.price.toLocaleString()} XP)`).setValue("elite").setEmoji(SHOP_ROLES.elite.emoji),
+          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.rookie.name} (${SHOP_ROLES.rookie.price.toLocaleString()} XP)`).setValue("rookie").setEmoji(SHOP_ROLES.rookie.emoji),
+          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.pro_player.name} (${SHOP_ROLES.pro_player.price.toLocaleString()} XP)`).setValue("pro_player").setEmoji(SHOP_ROLES.pro_player.emoji)
+        );
+
+      const row = new ActionRowBuilder().addComponents(selectMenu);
+
+      await message.channel.send({ embeds: [shopEmbed], components: [row] });
+    } catch (err) { console.error("[Shop Panel Error]", err.message); }
+    return;
+  }
+
   // פקודת !xp לבדיקת אקס פי לעצמי או לאחרים
   if (message.content.startsWith("!xp")) {
     try {
       const member = message.member;
       const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
 
-      // הגבלת חדר קשוחה לחדר ה-XP
       if (message.channel.id !== XP_CHECK_CHANNEL_ID && !hasAdmin) {
         const warning = await message.reply("❌ ניתן להשתמש בפקודה הזו רק בחדר בדיקת ה-XP הייעודי!");
         setTimeout(() => { message.delete().catch(() => null); warning.delete().catch(() => null); }, 5000);
@@ -329,7 +381,6 @@ client.on("messageCreate", async (message) => {
 
       const target = message.mentions.members.first();
 
-      // אם יש תיוג של מישהו אחר (!xp @user), מוודאים שרק צוות יכול לבדוק
       if (target && target.id !== member.id) {
         const isStaff = member.roles.cache.has(STAFF_ROLE_ID) || member.roles.cache.has(HIGH_STAFF_ROLE_ID) || message.author.id === message.guild.ownerId;
         if (!hasAdmin && !isStaff) {
@@ -376,7 +427,6 @@ client.on("messageCreate", async (message) => {
       addComponentsXP(target.id, amount);
       await message.reply(`✅ נוספו בהצלחה **${amount.toLocaleString()} XP** למשתמש ${target}. סך הכל כעת: **${Math.floor(getUserXP(target.id)).toLocaleString()} XP**.`);
 
-      // שילוח לוג לחדר הניהול המוגן
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
       if (logChannel) {
         const logEmbed = new EmbedBuilder()
@@ -418,7 +468,6 @@ client.on("messageCreate", async (message) => {
       addComponentsXP(target.id, -amount);
       await message.reply(`🔻 הוסרו בהצלחה **${amount.toLocaleString()} XP** מהמשתמש ${target}. סך הכל כעת: **${Math.floor(getUserXP(target.id)).toLocaleString()} XP**.`);
 
-      // שילוח לוג לחדר הניהול המוגן
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
       if (logChannel) {
         const logEmbed = new EmbedBuilder()
@@ -460,7 +509,6 @@ client.on("messageCreate", async (message) => {
       
       await message.reply(`🔄 ה-XP של המשתמש ${target} אופס לחלוטין ל-**0**! (היו לו **${currentXpBeforeReset.toLocaleString()}** XP לפני האיפוס).`);
 
-      // שילוח לוג לחדר הניהול המוגן
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
       if (logChannel) {
         const logEmbed = new EmbedBuilder()
@@ -511,6 +559,64 @@ client.on("messageCreate", async (message) => {
 // אינטראקציות (Buttons / Select Menus)
 client.on("interactionCreate", async (interaction) => {
   
+  // לוגיקה לקניית רול מתוך חנות ה-XP
+  if (interaction.isStringSelectMenu() && interaction.customId === "shop_role_select") {
+    try {
+      await interaction.deferReply({ ephemeral: true });
+      const chosenKey = interaction.values[0];
+      const roleData = SHOP_ROLES[chosenKey];
+
+      if (!roleData) {
+        return await interaction.editReply({ content: "❌ שגיאה: הרול שנבחר לא נמצא במערכת החנות." });
+      }
+
+      const member = interaction.member;
+      const userXp = getUserXP(interaction.user.id);
+
+      // 1. בדיקה אם יש למשתמש כבר את הרול
+      if (member.roles.cache.has(roleData.id)) {
+        return await interaction.editReply({ content: `❌ כבר יש לך את הרול ${roleData.emoji} **${roleData.name}** במשתמש!` });
+      }
+
+      // 2. בדיקה אם יש לו מספיק XP
+      if (userXp < roleData.price) {
+        const missingXp = roleData.price - userXp;
+        return await interaction.editReply({ 
+          content: `❌ אין לך מספיק XP! הרול עולה **${roleData.price.toLocaleString()}** XP, ולך יש כרגע **${Math.floor(userXp).toLocaleString()}** XP (חסר לך עוד **${Math.ceil(missingXp).toLocaleString()}** XP).` 
+        });
+      }
+
+      // 3. ביצוע הרכישה (הורדת ה-XP והענקת הרול)
+      addComponentsXP(interaction.user.id, -roleData.price);
+      await member.roles.add(roleData.id);
+
+      await interaction.editReply({ 
+        content: `🎉 תתחדש! קנית בהצלחה את הרול <@&${roleData.id}> תמורת **${roleData.price.toLocaleString()}** XP!\n📊 יתרת ה-XP החדשה שלך: **${Math.floor(getUserXP(interaction.user.id)).toLocaleString()}** XP.` 
+      });
+
+      // 4. שליחת לוג לחדר לוגי הצוות המוגן
+      const logChannel = interaction.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
+      if (logChannel) {
+        const buyLogEmbed = new EmbedBuilder()
+          .setTitle("🛍️ רכישת רול בחנות ה-XP")
+          .setColor("#9b59b6")
+          .addFields(
+            { name: "👤 הקונה:", value: `${interaction.user} (${interaction.user.id})`, inline: true },
+            { name: "🏷️ הרול שנרכש:", value: `<@&${roleData.id}>`, inline: true },
+            { name: "📉 עלות הרכישה:", value: `**${roleData.price.toLocaleString()}** XP`, inline: false },
+            { name: "📊 יתרת XP מעודכנת:", value: `**${Math.floor(getUserXP(interaction.user.id)).toLocaleString()}** XP`, inline: false }
+          )
+          .setTimestamp();
+        await logChannel.send({ embeds: [buyLogEmbed] });
+      }
+
+    } catch (err) {
+      console.error("[Shop Purchase Error]", err.message);
+      await interaction.editReply({ content: "❌ אירעה שגיאה טכנית בזמן הניסיון להעניק את הרול. פנה למנהל השרת." });
+    }
+    return;
+  }
+
   if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type_select") {
     try {
       await interaction.deferReply({ ephemeral: true });
