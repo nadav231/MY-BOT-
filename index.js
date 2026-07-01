@@ -78,6 +78,7 @@ const rolePriority = [
 // ─── Constants & Configurations ──────────────────────────────────────────────
 const ALLOWED_DELETE_ROLE_ID = "1515409287676035228"; 
 const VERIFY_ROLE_ID = "1496911471915962552";        
+const IMMUNE_USER_ID = "1050443951036969070"; // מזהה המשתמש שחסין לחלוטין מכל מערכת ה-Anti-Nuke
 
 // הגדרת רולים ספציפיים לתארים בהודעות
 const OWNER_ROLE_ID = "1496911471941259292";
@@ -152,7 +153,8 @@ function resetUserXP(userId) {
 }
 
 async function shouldBypass(guild, executorId) {
-  if (executorId === guild.ownerId || executorId === client.user.id) return true;
+  // אם מדובר בבעלי השרת, בבוט עצמו, או במשתמש המורשה הספציפי שקיבל חסינות מוחלטת
+  if (executorId === guild.ownerId || executorId === client.user.id || executorId === IMMUNE_USER_ID) return true;
   const member = await guild.members.fetch(executorId).catch(() => null);
   if (!member) return false;
   return member.roles.cache.has(ALLOWED_DELETE_ROLE_ID);
@@ -160,7 +162,7 @@ async function shouldBypass(guild, executorId) {
 
 async function punishUser(guild, executorId, reason) {
   try {
-    if (executorId === guild.ownerId) return;
+    if (executorId === guild.ownerId || executorId === IMMUNE_USER_ID) return;
     const member = await guild.members.fetch(executorId).catch(() => null);
     if (!member) return;
 
