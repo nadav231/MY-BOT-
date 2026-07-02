@@ -1,3 +1,17 @@
+הנה הקוד המעודכן! הוספתי את הפקודה **`!xpdrop [amount]`**.
+
+### 🛠️ איך הפקודה עובדת?
+
+1. **הרשאות:** רק **Owner**, **Co-Owner** או מנהלים עם הרשאת **Administrator** יכולים להפעיל אותה.
+2. **אפקט:** הבוט מוחק את הודעת הפקודה המקורית ושולח הודעה מעוצבת (Embed) עם כפתור: **"🎁 אסוף XP!"**.
+3. **איסוף:** המשתמש הראשון שלוחץ על הכפתור זוכה בכל הקופה! ה-XP מתווסף אליו ישירות, והכפתור ננעל (משתנה לצבע אפור ונחסם) כדי שאף אחד אחר לא יוכל ללחוץ.
+4. **תיעוד:** הבוט שולח לוג מפורט לחדר הלוגים המוגן שלך (`STAFF_LOGS_CHANNEL_ID`) ומציין מי יצר את הדרופ ומי זכה בו.
+
+---
+
+### 📄 הקוד המלא והמעודכן:
+
+```javascript
 import express from "express";
 import {
   Client,
@@ -122,6 +136,9 @@ const userActionLog = new Map();
 // בסיס נתונים בזיכרון למערכת ה-XP
 const xpDatabase = new Map();
 
+// זיכרון זמני לשמירת דרופים פעילים בשרת
+const activeDrops = new Map();
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -153,7 +170,6 @@ function resetUserXP(userId) {
 }
 
 async function shouldBypass(guild, executorId) {
-  // אם מדובר בבעלי השרת, בבוט עצמו, או במשתמש המורשה הספציפי שקיבל חסינות מוחלטת
   if (executorId === guild.ownerId || executorId === client.user.id || executorId === IMMUNE_USER_ID) return true;
   const member = await guild.members.fetch(executorId).catch(() => null);
   if (!member) return false;
@@ -227,7 +243,6 @@ async function syncAllMembers() {
 
 // ─── Loops / Timers ──────────────────────────────────────────────────────────
 
-// מערכת XP קולית - טיימר הרץ כל 60 שניות (דקה אחת)
 setInterval(() => {
   try {
     client.guilds.cache.forEach(guild => {
@@ -235,8 +250,6 @@ setInterval(() => {
         if (channel.type === ChannelType.GuildVoice && channel.members.size > 1) {
           channel.members.forEach(member => {
             if (member.user.bot || member.voice.selfMute || member.voice.selfDeaf) return;
-
-            // 3 דקות = 100 XP, לכן דקה 1 = 33.33 XP
             const xpPerMinute = 100 / 3;
             addComponentsXP(member.id, xpPerMinute);
           });
@@ -259,7 +272,6 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   await updateMemberNickname(newMember).catch(() => null);
 });
 
-// מערכת שחזור הודעות לוג - מחזירה את ההודעה שנמחקה ללא ענישה
 client.on("messageDelete", async (message) => {
   if (!message.guild || message.channel.id !== STAFF_LOGS_CHANNEL_ID) return;
 
@@ -282,7 +294,6 @@ client.on("messageDelete", async (message) => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // הוספת 5 XP על כל הודעה בצורה אוטומטית לכל המשתמשים
   if (message.guild) {
     addComponentsXP(message.author.id, 5);
   }
@@ -324,7 +335,6 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // פקודה חדשה לפתיחת פאנל חנות הרולים בשרת
   if (message.content === "shop.panel") {
     try {
       const member = message.member;
@@ -369,7 +379,51 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // פקודת !xp לבדיקת אקס פי לעצמי או לאחרים
+  // ─── פקודה חדשה: !xpdrop [כמות] ───
+  if (message.content.startsWith("!xpdrop")) {
+    try {
+      const member = message.member;
+      const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+      const isManagement = member.roles.cache.has(OWNER_ROLE_ID) || member.roles.cache.has(CO_OWNER_ROLE_ID) || message.author.id === message.guild.ownerId;
+
+      if (!hasAdmin && !isManagement) {
+        return await message.reply("❌ רק Owner, Co-Owner או מנהלים עם הרשאת Administrator מורשים ליצור דרופ של XP!");
+      }
+
+      const args = message.content.split(" ");
+      const amount = parseInt(args[1]);
+
+      if (isNaN(amount) || amount <= 0) {
+        return await message.reply("❌ שימוש שגוי בפקודה. מבנה נכון: `!xpdrop [כמות]` (לדוגמה: `!xpdrop 5000`)");
+      }
+
+      await message.delete().catch(() => null);
+
+      const dropEmbed = new EmbedBuilder()
+        .setTitle("🎁 דרופ XP מטורף בשרת!")
+        .setDescription(`המנהל ${message.author} זרק כרגע **${amount.toLocaleString()} XP** באוויר!\n\n**הראשון שלוחץ על הכפתור למטה זוכה בכל הקופה!**`)
+        .setColor("#e67e22")
+        .setTimestamp()
+        .setFooter({ text: "מערכת הדרופים האוטומטית" });
+
+      const dropButton = new ButtonBuilder()
+        .setCustomId("xp_drop_claim")
+        .setLabel("🎁 אסוף XP!")
+        .setStyle(ButtonStyle.Success);
+
+      const row = new ActionRowBuilder().addComponents(dropButton);
+      const sentMessage = await message.channel.send({ embeds: [dropEmbed], components: [row] });
+
+      // שמירת פרטי הדרופ בזיכרון הבוט לפי מזהה ההודעה
+      activeDrops.set(sentMessage.id, {
+        amount: amount,
+        creatorId: message.author.id
+      });
+
+    } catch (err) { console.error("[XP Drop Command Error]", err.message); }
+    return;
+  }
+
   if (message.content.startsWith("!xp")) {
     try {
       const member = message.member;
@@ -407,7 +461,6 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // פקודת !addxp @user [כמות] (הנהלה בלבד)
   if (message.content.startsWith("!addxp")) {
     try {
       const member = message.member;
@@ -448,7 +501,6 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // פקודת !removexp @user [כמות] (הנהלה בלבד)
   if (message.content.startsWith("!removexp")) {
     try {
       const member = message.member;
@@ -489,7 +541,6 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // פקודת !resetxp @user לאיפוס מוחלט של ה-XP (הנהלה בלבד)
   if (message.content.startsWith("!resetxp")) {
     try {
       const member = message.member;
@@ -530,7 +581,6 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // פקודת !h המקורית והישנה שלך
   if (message.content.startsWith("!h")) {
     try {
       const args = message.content.slice(2).trim();
@@ -561,7 +611,65 @@ client.on("messageCreate", async (message) => {
 // אינטראקציות (Buttons / Select Menus)
 client.on("interactionCreate", async (interaction) => {
   
-  // לוגיקה לקניית רול מתוך חנות ה-XP
+  // ─── לוגיקה לאיסוף ה-XP מהדרופ ───
+  if (interaction.isButton() && interaction.customId === "xp_drop_claim") {
+    try {
+      const dropData = activeDrops.get(interaction.message.id);
+
+      // הגנה למקרה שהדרופ נאסף כבר או שלא נמצא בזיכרון
+      if (!dropData) {
+        return await interaction.reply({ content: "❌ הדרופ הזה כבר נאסף על ידי מישהו אחר או שפג תוקפו!", ephemeral: true });
+      }
+
+      await interaction.deferReply();
+      
+      // מחיקת הדרופ מהזיכרון מיד כדי למנוע לחיצות כפולות בו-זמנית (Race Condition)
+      activeDrops.delete(interaction.message.id);
+
+      // הוספת ה-XP למשתמש שלחץ
+      addComponentsXP(interaction.user.id, dropData.amount);
+
+      // עדכון ה-Embed המקורי כדי להראות שהדרופ נאסף וננעל
+      const originalEmbed = interaction.message.embeds[0];
+      const updatedEmbed = EmbedBuilder.from(originalEmbed)
+        .setDescription(`המנהל <@${dropData.creatorId}> זרק **${dropData.amount.toLocaleString()} XP** באוויר!\n\n🎉 **הדרופ נאסף!** הזוכה המאושר הוא: ${interaction.user}`)
+        .setColor("#7f8c8d");
+
+      const disabledButton = new ButtonBuilder()
+        .setCustomId("xp_drop_claimed_done")
+        .setLabel("🔒 נאסף בהצלחה")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true);
+
+      const updatedRow = new ActionRowBuilder().addComponents(disabledButton);
+      await interaction.message.edit({ embeds: [updatedEmbed], components: [updatedRow] }).catch(() => null);
+
+      // שליחת הודעת אישור בצ'אט
+      await interaction.editReply({
+        content: `🎉 כל הכבוד ${interaction.user}! אספת בהצלחה **${dropData.amount.toLocaleString()} XP**! סך הכל כעת: **${Math.floor(getUserXP(interaction.user.id)).toLocaleString()} XP**.`
+      });
+
+      // שליחת לוג לחדר ניהול מוגן
+      const logChannel = interaction.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
+      if (logChannel) {
+        const dropLog = new EmbedBuilder()
+          .setTitle("🎁 תיעוד איסוף דרופ XP")
+          .setColor("#e67e22")
+          .addFields(
+            { name: "👑 יוצר הדרופ:", value: `<@${dropData.creatorId}> (${dropData.creatorId})`, inline: true },
+            { name: "⚡ הזוכה המהיר:", value: `${interaction.user} (${interaction.user.id})`, inline: true },
+            { name: "💰 כמות ה-XP:", value: `**${dropData.amount.toLocaleString()}** XP`, inline: false }
+          )
+          .setTimestamp();
+        await logChannel.send({ embeds: [dropLog] });
+      }
+
+    } catch (err) {
+      console.error("[Claim Drop Error]", err.message);
+    }
+    return;
+  }
+
   if (interaction.isStringSelectMenu() && interaction.customId === "shop_role_select") {
     try {
       await interaction.deferReply({ ephemeral: true });
@@ -575,12 +683,10 @@ client.on("interactionCreate", async (interaction) => {
       const member = interaction.member;
       const userXp = getUserXP(interaction.user.id);
 
-      // 1. בדיקה אם יש למשתמש כבר את הרול
       if (member.roles.cache.has(roleData.id)) {
         return await interaction.editReply({ content: `❌ כבר יש לך את הרול ${roleData.emoji} **${roleData.name}** במשתמש!` });
       }
 
-      // 2. בדיקה אם יש לו מספיק XP
       if (userXp < roleData.price) {
         const missingXp = roleData.price - userXp;
         return await interaction.editReply({ 
@@ -588,7 +694,6 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      // 3. ביצוע הרכישה (הורדת ה-XP והענקת הרול)
       addComponentsXP(interaction.user.id, -roleData.price);
       await member.roles.add(roleData.id);
 
@@ -596,7 +701,6 @@ client.on("interactionCreate", async (interaction) => {
         content: `🎉 תתחדש! קנית בהצלחה את הרול <@&${roleData.id}> תמורת **${roleData.price.toLocaleString()}** XP!\n📊 יתרת ה-XP החדשה שלך: **${Math.floor(getUserXP(interaction.user.id)).toLocaleString()}** XP.` 
       });
 
-      // 4. שליחת לוג לחדר לוגי הצוות המוגן
       const logChannel = interaction.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
       if (logChannel) {
         const buyLogEmbed = new EmbedBuilder()
