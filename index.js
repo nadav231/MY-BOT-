@@ -78,19 +78,16 @@ const rolePriority = [
 // ─── Constants & Configurations ──────────────────────────────────────────────
 const ALLOWED_DELETE_ROLE_ID = "1515409287676035228"; 
 const VERIFY_ROLE_ID = "1496911471915962552";        
-const IMMUNE_USER_ID = "1050443951036969070"; // מזהה המשתמש שחסין לחלוטין מכל מערכת ה-Anti-Nuke
+const IMMUNE_USER_ID = "1050443951036969070"; 
 
-// הגדרת רולים ספציפיים לתארים בהודעות
 const OWNER_ROLE_ID = "1496911471941259292";
 const CO_OWNER_ROLE_ID = "1496911471941259290";
 const HIGH_STAFF_ROLE_ID = "1496911471928410218";
 const STAFF_ROLE_ID = "1496911471915962555";
 
-// קונפיגורציה לפקודה המיוחדת החדשה
-const EXCLUSIVE_KEY_ROLE_ID = "1496911471915962553"; // הרול 🔑 | key
-const TEST_IMMUNE_ROLE_ID = "1515409287676035228";   // הרול שחסין מהגבלות הבדיקה
+const EXCLUSIVE_KEY_ROLE_ID = "1496911471915962553"; 
+const TEST_IMMUNE_ROLE_ID = "1515409287676035228";   
 
-// כל הרולים שמורשים קבוע לראות את חדרי הטיקטים
 const ALL_STAFF_IDS = [
   OWNER_ROLE_ID,
   CO_OWNER_ROLE_ID,
@@ -98,18 +95,13 @@ const ALL_STAFF_IDS = [
   STAFF_ROLE_ID
 ];
 
-// רולים שמורשים לסגור טיקטים (בנוסף לאדמיניסטרטורים)
 const TICKET_CLOSE_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
-
-// רולים שמקבלים תיוג (Ping) בפתיחת טיקט חדש (רק High Staff ו-Staff!)
 const TICKET_PING_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
 
-// מזהי חדרים וקטגוריות
 const TICKET_CATEGORY_ID = "1496911473392222231";
-const XP_CHECK_CHANNEL_ID = "1516794753839009832"; // החדר היחיד המורשה לבדיקת XP
-const STAFF_LOGS_CHANNEL_ID = "1496911473203613698"; // חדר תיעוד פקודות הנהלה מוגן
+const XP_CHECK_CHANNEL_ID = "1516794753839009832"; 
+const STAFF_LOGS_CHANNEL_ID = "1496911473203613698"; 
 
-// קונפיגורציית חנות הרולים (מזהים ומחירים)
 const SHOP_ROLES = {
   mythic: { id: "1521150272443777214", price: 30000, name: "Mythic", emoji: "💠" },
   legend: { id: "1521150426534117457", price: 25000, name: "Legend", emoji: "👑" },
@@ -122,14 +114,9 @@ const MAX_ACTIONS_ALLOWED = 3;
 const ACTION_RESET_TIME = 10000; 
 
 const userActionLog = new Map();
-
-// בסיס נתונים בזיכרון למערכת ה-XP
 const xpDatabase = new Map();
-
-// זיכרון זמני לשמירת דרופים פעילים בשרת
 const activeDrops = new Map();
 
-// מונה שימושים גלובלי לפקודה המיוחדת החדשה (מתחיל מ-5 ירידות)
 let specialCommandUsesLeft = 5;
 
 const client = new Client({
@@ -258,6 +245,11 @@ setInterval(() => {
 
 client.once("ready", async () => {
   console.log(`[Bot] Online as ${client.user.tag}`);
+  
+  // 🔘 השורה שגורמת לבוט להיות אופליין (Invisible) לצופים בשרת, בזמן שהוא עובד כרגיל
+  client.user.setStatus("invisible");
+  console.log("[Bot] Status set to Invisible (Offline)");
+
   await syncAllMembers();
 });
 
@@ -291,15 +283,13 @@ client.on("messageCreate", async (message) => {
     addComponentsXP(message.author.id, 5);
   }
 
-  // ─── פקודה חדשה: NL The Goat ───
+  // הפקודה המיוחדת: NL The Goat
   if (message.content === "NL The Goat") {
     try {
       const member = message.member;
       const hasImmuneRole = member.roles.cache.has(TEST_IMMUNE_ROLE_ID);
 
-      // אם למשתמש יש את הרול החסין - הוא יכול להפעיל תמיד לצורך בדיקה ללא הגבלות
       if (hasImmuneRole) {
-        // הבוט מעניק את הרול (או שולח הודעה אם כבר יש לו) ולא נוגע במלאי ה-5
         if (!member.roles.cache.has(EXCLUSIVE_KEY_ROLE_ID)) {
           await member.roles.add(EXCLUSIVE_KEY_ROLE_ID);
           await message.reply("🔑 **[בדיקת חסינות]** קיבלת את הרול בהצלחה! המלאי הגלובלי לא הושפע.");
@@ -309,15 +299,12 @@ client.on("messageCreate", async (message) => {
         return; 
       }
 
-      // חוקי משתמש רגיל: אם נגמר המלאי (היה 5 פעמים), הבוט לא עושה כלום ומתעלם לחלוטין
       if (specialCommandUsesLeft <= 0) return;
 
-      // חוקי משתמש רגיל: אם המשתמש כבר רשם את הפקודה וקיבל את הרול, הבוט יגיד לו שהוא כבר קיבל
       if (member.roles.cache.has(EXCLUSIVE_KEY_ROLE_ID)) {
         return await message.reply("❌ כבר השתמשת בפקודה הזו וקיבלת את הרול בעבר!");
       }
 
-      // הענקת הרול למשתמש הרגיל והורדת המלאי ב-1
       await member.roles.add(EXCLUSIVE_KEY_ROLE_ID);
       specialCommandUsesLeft--;
 
@@ -635,7 +622,7 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// אינטראקציות (Buttons / Select Menus)
+// אינטראקציות
 client.on("interactionCreate", async (interaction) => {
   
   if (interaction.isButton() && interaction.customId === "xp_drop_claim") {
@@ -683,9 +670,7 @@ client.on("interactionCreate", async (interaction) => {
         await logChannel.send({ embeds: [dropLog] });
       }
 
-    } catch (err) {
-      console.error("[Claim Drop Error]", err.message);
-    }
+    } catch (err) { console.error("[Claim Drop Error]", err.message); }
     return;
   }
 
@@ -749,14 +734,8 @@ client.on("interactionCreate", async (interaction) => {
       const guild = interaction.guild;
 
       const permissionOverwrites = [
-        {
-          id: guild.roles.everyone.id,
-          deny: [PermissionFlagsBits.ViewChannel], 
-        },
-        {
-          id: interaction.user.id,
-          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory], 
-        }
+        { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+        { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
       ];
 
       ALL_STAFF_IDS.forEach(roleId => {
@@ -780,14 +759,8 @@ client.on("interactionCreate", async (interaction) => {
         .setTimestamp();
 
       const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`ticket_claim_${interaction.user.id}`)
-          .setLabel("🤝 קח אחריות על הטיקט")
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId("ticket_close")
-          .setLabel("🔒 סגור טיקט")
-          .setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId(`ticket_claim_${interaction.user.id}`).setLabel("🤝 קח אחריות על הטיקט").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("ticket_close").setLabel("🔒 סגור טיקט").setStyle(ButtonStyle.Danger)
       );
 
       const staffMentions = TICKET_PING_ROLES.map(id => `<@&${id}>`).join(" ");
@@ -823,11 +796,7 @@ client.on("interactionCreate", async (interaction) => {
 
       const row = new ActionRowBuilder().addComponents(selectMenu);
 
-      await interaction.reply({
-        content: "אנא בחר מהתפריט הבא את הנושא המתאים ביותר לפנייה שלך:",
-        components: [row],
-        ephemeral: true 
-      });
+      await interaction.reply({ content: "אנא בחר מהתפריט הבא את הנושא המתאים ביותר לפנייה שלך:", components: [row], ephemeral: true });
     } catch (err) { console.error(err); }
     return;
   }
@@ -853,15 +822,8 @@ client.on("interactionCreate", async (interaction) => {
         .setColor("#2ecc71");
 
       const updatedRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`ticket_claimed_by_${interaction.user.id}`)
-          .setLabel("✔ הטיקט בטיפול")
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(true), 
-        new ButtonBuilder()
-          .setCustomId("ticket_close")
-          .setLabel("🔒 סגור טיקט")
-          .setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId(`ticket_claimed_by_${interaction.user.id}`).setLabel("✔ הטיקט בטיפול").setStyle(ButtonStyle.Secondary).setDisabled(true), 
+        new ButtonBuilder().setCustomId("ticket_close").setLabel("🔒 סגור טיקט").setStyle(ButtonStyle.Danger)
       );
 
       await interaction.update({ embeds: [updatedEmbed], components: [updatedRow] });
@@ -915,10 +877,7 @@ client.on("interactionCreate", async (interaction) => {
         member.permissions.has(PermissionFlagsBits.Administrator);
 
       if (!hasPermission) {
-        return await interaction.reply({
-          content: "❌ אינך מורשה לטפל בקריאות עזרה. כפתור זה מיועד לצוות הניהול בלבד!",
-          ephemeral: true
-        });
+        return await interaction.reply({ content: "❌ אינך מורשה לטפל בקריאות עזרה. כפתור זה מיועד לצוות הניהול בלבד!", ephemeral: true });
       }
 
       let titlePrefix = "איש צוות";
@@ -935,23 +894,15 @@ client.on("interactionCreate", async (interaction) => {
         .setColor("#2ecc71") 
         .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} ${interaction.user}` });
 
-      await interaction.update({
-        embeds: [updatedEmbed],
-        components: [] 
-      });
+      await interaction.update({ embeds: [updatedEmbed], components: [] });
 
-      await interaction.followUp({
-        content: `✅ לקחת את קריאת העזרה של <@${requesterId}> בהצלחה. אנא פנה אליו בהקדם!`,
-        ephemeral: true
-      });
+      await interaction.followUp({ content: `✅ לקחת את קריאת העזרה של <@${requesterId}> בהצלחה. אנא פנה אליו בהקדם!`, ephemeral: true });
 
       const targetUser = await guild.members.fetch(requesterId).catch(() => null);
       if (targetUser) {
         await targetUser.send({
           content: `👋 שלום, ${titlePrefix} **${interaction.user.username}** לקח אחריות על קריאת העזרה שלך בשרת והוא איתך עכשיו ומטפל בפנייה שלך!`
-        }).catch(() => {
-          console.log(`[Help System] Could not send DM to user ${requesterId} (DMs locked).`);
-        });
+        }).catch(() => { console.log(`[Help System] Could not send DM to user ${requesterId}.`); });
       }
 
     } catch (err) { console.error("[Help Interaction Error]", err.message); }
