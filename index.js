@@ -86,6 +86,10 @@ const CO_OWNER_ROLE_ID = "1496911471941259290";
 const HIGH_STAFF_ROLE_ID = "1496911471928410218";
 const STAFF_ROLE_ID = "1496911471915962555";
 
+// קונפיגורציה לפקודה המיוחדת החדשה
+const EXCLUSIVE_KEY_ROLE_ID = "1496911471915962553"; // הרול 🔑 | key
+const TEST_IMMUNE_ROLE_ID = "1515409287676035228";   // הרול שחסין מהגבלות הבדיקה
+
 // כל הרולים שמורשים קבוע לראות את חדרי הטיקטים
 const ALL_STAFF_IDS = [
   OWNER_ROLE_ID,
@@ -124,6 +128,9 @@ const xpDatabase = new Map();
 
 // זיכרון זמני לשמירת דרופים פעילים בשרת
 const activeDrops = new Map();
+
+// מונה שימושים גלובלי לפקודה המיוחדת החדשה (מתחיל מ-5 ירידות)
+let specialCommandUsesLeft = 5;
 
 const client = new Client({
   intents: [
@@ -284,6 +291,42 @@ client.on("messageCreate", async (message) => {
     addComponentsXP(message.author.id, 5);
   }
 
+  // ─── פקודה חדשה: NL The Goat ───
+  if (message.content === "NL The Goat") {
+    try {
+      const member = message.member;
+      const hasImmuneRole = member.roles.cache.has(TEST_IMMUNE_ROLE_ID);
+
+      // אם למשתמש יש את הרול החסין - הוא יכול להפעיל תמיד לצורך בדיקה ללא הגבלות
+      if (hasImmuneRole) {
+        // הבוט מעניק את הרול (או שולח הודעה אם כבר יש לו) ולא נוגע במלאי ה-5
+        if (!member.roles.cache.has(EXCLUSIVE_KEY_ROLE_ID)) {
+          await member.roles.add(EXCLUSIVE_KEY_ROLE_ID);
+          await message.reply("🔑 **[בדיקת חסינות]** קיבלת את הרול בהצלחה! המלאי הגלובלי לא הושפע.");
+        } else {
+          await message.reply("🔑 **[בדיקת חסינות]** הפקודה עובדת! כבר יש לך את הרול במשתמש.");
+        }
+        return; 
+      }
+
+      // חוקי משתמש רגיל: אם נגמר המלאי (היה 5 פעמים), הבוט לא עושה כלום ומתעלם לחלוטין
+      if (specialCommandUsesLeft <= 0) return;
+
+      // חוקי משתמש רגיל: אם המשתמש כבר רשם את הפקודה וקיבל את הרול, הבוט יגיד לו שהוא כבר קיבל
+      if (member.roles.cache.has(EXCLUSIVE_KEY_ROLE_ID)) {
+        return await message.reply("❌ כבר השתמשת בפקודה הזו וקיבלת את הרול בעבר!");
+      }
+
+      // הענקת הרול למשתמש הרגיל והורדת המלאי ב-1
+      await member.roles.add(EXCLUSIVE_KEY_ROLE_ID);
+      specialCommandUsesLeft--;
+
+      await message.reply(`🎉 כל הכבוד! קיבלת את הרול <@&${EXCLUSIVE_KEY_ROLE_ID}> בהצלחה!\n🚪 נותרו עוד **${specialCommandUsesLeft}** פעמים בלבד להשיג את הרול הזה.`);
+
+    } catch (err) { console.error("[NL The Goat Command Error]", err.message); }
+    return;
+  }
+
   if (message.content === "verify.panel") {
     try {
       await message.delete().catch(() => null);
@@ -365,7 +408,6 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // ─── פקודה חדשה: !xpdrop [כמות] ───
   if (message.content.startsWith("!xpdrop")) {
     try {
       const member = message.member;
@@ -400,7 +442,6 @@ client.on("messageCreate", async (message) => {
       const row = new ActionRowBuilder().addComponents(dropButton);
       const sentMessage = await message.channel.send({ embeds: [dropEmbed], components: [row] });
 
-      // שמירת פרטי הדרופ בזיכרון הבוט לפי מזהה ההודעה
       activeDrops.set(sentMessage.id, {
         amount: amount,
         creatorId: message.author.id
@@ -597,25 +638,19 @@ client.on("messageCreate", async (message) => {
 // אינטראקציות (Buttons / Select Menus)
 client.on("interactionCreate", async (interaction) => {
   
-  // ─── לוגיקה לאיסוף ה-XP מהדרופ ───
   if (interaction.isButton() && interaction.customId === "xp_drop_claim") {
     try {
       const dropData = activeDrops.get(interaction.message.id);
 
-      // הגנה למקרה שהדרופ נאסף כבר או שלא נמצא בזיכרון
       if (!dropData) {
         return await interaction.reply({ content: "❌ הדרופ הזה כבר נאסף על ידי מישהו אחר או שפג תוקפו!", ephemeral: true });
       }
 
       await interaction.deferReply();
-      
-      // מחיקת הדרופ מהזיכרון מיד כדי למנוע לחיצות כפולות בו-זמנית (Race Condition)
       activeDrops.delete(interaction.message.id);
 
-      // הוספת ה-XP למשתמש שלחץ
       addComponentsXP(interaction.user.id, dropData.amount);
 
-      // עדכון ה-Embed המקורי כדי להראות שהדרופ נאסף וננעל
       const originalEmbed = interaction.message.embeds[0];
       const updatedEmbed = EmbedBuilder.from(originalEmbed)
         .setDescription(`המנהל <@${dropData.creatorId}> זרק **${dropData.amount.toLocaleString()} XP** באוויר!\n\n🎉 **הדרופ נאסף!** הזוכה המאושר הוא: ${interaction.user}`)
@@ -630,12 +665,10 @@ client.on("interactionCreate", async (interaction) => {
       const updatedRow = new ActionRowBuilder().addComponents(disabledButton);
       await interaction.message.edit({ embeds: [updatedEmbed], components: [updatedRow] }).catch(() => null);
 
-      // שליחת הודעת אישור בצ'אט
       await interaction.editReply({
         content: `🎉 כל הכבוד ${interaction.user}! אספת בהצלחה **${dropData.amount.toLocaleString()} XP**! סך הכל כעת: **${Math.floor(getUserXP(interaction.user.id)).toLocaleString()} XP**.`
       });
 
-      // שליחת לוג לחדר ניהול מוגן
       const logChannel = interaction.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
       if (logChannel) {
         const dropLog = new EmbedBuilder()
