@@ -246,9 +246,9 @@ setInterval(() => {
 client.once("ready", async () => {
   console.log(`[Bot] Online as ${client.user.tag}`);
   
-  // 🔘 השורה שגורמת לבוט להיות אופליין (Invisible) לצופים בשרת, בזמן שהוא עובד כרגיל
-  client.user.setStatus("invisible");
-  console.log("[Bot] Status set to Invisible (Offline)");
+  // 🔴 השורה שגורמת לבוט להיות בסטטוס אדום (Do Not Disturb) קבוע
+  client.user.setStatus("dnd");
+  console.log("[Bot] Status set to Do Not Disturb (dnd)");
 
   await syncAllMembers();
 });
@@ -372,7 +372,7 @@ client.on("messageCreate", async (message) => {
           `🌟 <@&${SHOP_ROLES.rookie.id}> — **${SHOP_ROLES.rookie.price.toLocaleString()}** XP\n` +
           `🔥 <@&${SHOP_ROLES.pro_player.id}> — **${SHOP_ROLES.pro_player.price.toLocaleString()}** XP\n\n` +
           "⚠️ **שים לב וקרא היטב:**\n" +
-          "**תוכלו לקנות רולים, אין החזר אלא אם לחצתם בטעות לא יודע!** ברגע שלחצתם וקניתם - ה-XP יורד ישירות מהחשבון שלכם ולא ניתן יהיה לקבלו חזרה. ודאו היטב שאתם בוחרים את הרול הנכון שאתם רוצים."
+          "**תוכולו לקנות רולים, אין החזר אלא אם לחצתם בטעות לא יודע!** ברגע שלחצתם וקניתם - ה-XP יורד ישירות מהחשבון שלכם ולא ניתן יהיה לקבלו חזרה. ודאו היטב שאתם בוחרים את הרול הנכון שאתם רוצים."
         )
         .setColor("#9b59b6")
         .setFooter({ text: "תתחדשו! • מערכת הרולים האוטומטית" });
