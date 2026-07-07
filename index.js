@@ -11,6 +11,9 @@ import {
   StringSelectMenuOptionBuilder,
   EmbedBuilder,
   PermissionFlagsBits,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } from "discord.js";
 
 // ─── Express Server ──────────────────────────────────────────────────────────
@@ -99,6 +102,7 @@ const TICKET_CLOSE_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
 const TICKET_PING_ROLES = [HIGH_STAFF_ROLE_ID, STAFF_ROLE_ID];
 
 const TICKET_CATEGORY_ID = "1496911473392222231";
+const PRIVATE_VOICE_CATEGORY_ID = "1523734971703886004"; // קטגוריית חדרים פרטיים החדשה
 const XP_CHECK_CHANNEL_ID = "1516794753839009832"; 
 const STAFF_LOGS_CHANNEL_ID = "1496911473203613698"; 
 
@@ -110,12 +114,14 @@ const SHOP_ROLES = {
   pro_player: { id: "1521150590376480858", price: 5000, name: "Pro Player", emoji: "🔥" }
 };
 
+const PRIVATE_VOICE_PRICE = 100000; // מחיר חדר פרטי
+
 const MAX_ACTIONS_ALLOWED = 3; 
 const ACTION_RESET_TIME = 10000; 
 
 const userActionLog = new Map();
 
-// 🔒 מסד הנתונים של ה-XP - נשאר בטוח מחוץ לשינויי הפקודות והאינטראקציות
+// 🔒 מסד הנתונים של ה-XP
 const xpDatabase = new Map();
 const activeDrops = new Map();
 
@@ -247,11 +253,7 @@ setInterval(() => {
 
 client.once("ready", async () => {
   console.log(`[Bot] Online as ${client.user.tag}`);
-  
-  // 🔴 סטטוס Do Not Disturb
   client.user.setStatus("dnd");
-  console.log("[Bot] Status set to Do Not Disturb (dnd)");
-
   await syncAllMembers();
 });
 
@@ -268,7 +270,6 @@ client.on("messageDelete", async (message) => {
       if (logChannel) {
         const recoveredEmbed = EmbedBuilder.from(message.embeds[0]);
         recoveredEmbed.setFooter({ text: "🛡️ הודעה זו שוחזרה אוטומטית לאחר ניסיון מחיקה!" });
-        
         await logChannel.send({ embeds: [recoveredEmbed] });
       }
     } catch (err) {
@@ -285,7 +286,6 @@ client.on("messageCreate", async (message) => {
     addComponentsXP(message.author.id, 5);
   }
 
-  // הפקודה המיוחדת: NL The Goat
   if (message.content === "NL The Goat") {
     try {
       const member = message.member;
@@ -309,14 +309,11 @@ client.on("messageCreate", async (message) => {
 
       await member.roles.add(EXCLUSIVE_KEY_ROLE_ID);
       specialCommandUsesLeft--;
-
       await message.reply(`🎉 כל הכבוד! קיבלת את הרול <@&${EXCLUSIVE_KEY_ROLE_ID}> בהצלחה!\n🚪 נותרו עוד **${specialCommandUsesLeft}** פעמים בלבד להשיג את הרול הזה.`);
-
     } catch (err) { console.error("[NL The Goat Command Error]", err.message); }
     return;
   }
 
-  // פאנל אימות משודרג ומושקע במיוחד ✨
   if (message.content === "verify.panel") {
     try {
       await message.delete().catch(() => null);
@@ -368,6 +365,7 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  // חנות רולים משודרגת הכוללת קניית חדר פרטי 🛒
   if (message.content === "shop.panel") {
     try {
       const member = message.member;
@@ -379,34 +377,36 @@ client.on("messageCreate", async (message) => {
       await message.delete().catch(() => null);
 
       const shopEmbed = new EmbedBuilder()
-        .setTitle("🛒 חנות הרולים הרשמית של השרת")
+        .setTitle("🛒 חנות השרת הרשמית — רולים וחדרים")
         .setDescription(
-          "כאן תוכלו להמיר את ה-XP שצברתם בצ'אטים ובחדרים הקוליים לרולים ייחודיים ומטורפים בשרת!\n\n" +
-          "**📜 מחירון הרולים הרשמי:**\n" +
+          "כאן תוכלו להמיר את ה-XP שצברתם בצ'אטים ובחדרים הקוליים לרולים מטורפים או לדרגות ייחודיות!\n\n" +
+          "**📜 מחירון החנות הרשמי:**\n" +
           `💠 <@&${SHOP_ROLES.mythic.id}> — **${SHOP_ROLES.mythic.price.toLocaleString()}** XP\n` +
           `👑 <@&${SHOP_ROLES.legend.id}> — **${SHOP_ROLES.legend.price.toLocaleString()}** XP\n` +
           `⚡ <@&${SHOP_ROLES.elite.id}> — **${SHOP_ROLES.elite.price.toLocaleString()}** XP\n` +
           `🌟 <@&${SHOP_ROLES.rookie.id}> — **${SHOP_ROLES.rookie.price.toLocaleString()}** XP\n` +
           `🔥 <@&${SHOP_ROLES.pro_player.id}> — **${SHOP_ROLES.pro_player.price.toLocaleString()}** XP\n\n` +
+          `🔒 **👑 קניית חדר וויס פרטי משלכם** — **${PRIVATE_VOICE_PRICE.toLocaleString()}** XP\n` +
+          "*(חדר נעול לחלוטין שפתוח רק לכם, עם גישה מיוחדת להעביר ולגרור חברים פנימה ללא צורך ברול!)*\n\n" +
           "⚠️ **שים לב וקרא היטב:**\n" +
-          "**תוכולו לקנות רולים, אין החזר אלא אם לחצתם בטעות לא יודע!** ברגע שלחצתם וקניתם - ה-XP יורד ישירות מהחשבון שלכם ולא ניתן יהיה לקבלו חזרה. ודאו היטב שאתם בוחרים את הרול הנכון שאתם רוצים."
+          "ברגע שקניתם - ה-XP יורד ישירות ולא ניתן להחזירו. ודאו היטב שאתם בוחרים את המוצר הנכון."
         )
         .setColor("#9b59b6")
-        .setFooter({ text: "תתחדשו! • מערכת הרולים האוטומטית" });
+        .setFooter({ text: "תתחדשו! • מערכת החנות האוטומטית" });
 
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId("shop_role_select")
-        .setPlaceholder("🛒 בחר תפקיד לקנייה...")
+        .setPlaceholder("🛒 בחר מוצר לקנייה מהחנות...")
         .addOptions(
           new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.mythic.name} (${SHOP_ROLES.mythic.price.toLocaleString()} XP)`).setValue("mythic").setEmoji(SHOP_ROLES.mythic.emoji),
           new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.legend.name} (${SHOP_ROLES.legend.price.toLocaleString()} XP)`).setValue("legend").setEmoji(SHOP_ROLES.legend.emoji),
           new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.elite.name} (${SHOP_ROLES.elite.price.toLocaleString()} XP)`).setValue("elite").setEmoji(SHOP_ROLES.elite.emoji),
           new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.rookie.name} (${SHOP_ROLES.rookie.price.toLocaleString()} XP)`).setValue("rookie").setEmoji(SHOP_ROLES.rookie.emoji),
-          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.pro_player.name} (${SHOP_ROLES.pro_player.price.toLocaleString()} XP)`).setValue("pro_player").setEmoji(SHOP_ROLES.pro_player.emoji)
+          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.pro_player.name} (${SHOP_ROLES.pro_player.price.toLocaleString()} XP)`).setValue("pro_player").setEmoji(SHOP_ROLES.pro_player.emoji),
+          new StringSelectMenuOptionBuilder().setLabel(`חדר וויס פרטי לעצמך (${PRIVATE_VOICE_PRICE.toLocaleString()} XP)`).setValue("buy_private_voice").setEmoji("👑")
         );
 
       const row = new ActionRowBuilder().addComponents(selectMenu);
-
       await message.channel.send({ embeds: [shopEmbed], components: [row] });
     } catch (err) { console.error("[Shop Panel Error]", err.message); }
     return;
@@ -426,7 +426,7 @@ client.on("messageCreate", async (message) => {
       const amount = parseInt(args[1]);
 
       if (isNaN(amount) || amount <= 0) {
-        return await message.reply("❌ שימוש שגוי בפקודה. מבנה נכון: `!xpdrop [כמות]` (לדוגמה: `!xpdrop 5000`)");
+        return await message.reply("❌ שימוש שגוי בפקודה. מבנה נכון: `!xpdrop [כמות]`");
       }
 
       await message.delete().catch(() => null);
@@ -446,11 +446,7 @@ client.on("messageCreate", async (message) => {
       const row = new ActionRowBuilder().addComponents(dropButton);
       const sentMessage = await message.channel.send({ embeds: [dropEmbed], components: [row] });
 
-      activeDrops.set(sentMessage.id, {
-        amount: amount,
-        creatorId: message.author.id
-      });
-
+      activeDrops.set(sentMessage.id, { amount: amount, creatorId: message.author.id });
     } catch (err) { console.error("[XP Drop Command Error]", err.message); }
     return;
   }
@@ -467,7 +463,6 @@ client.on("messageCreate", async (message) => {
       }
 
       const target = message.mentions.members.first();
-
       if (target && target.id !== member.id) {
         const isStaff = member.roles.cache.has(STAFF_ROLE_ID) || member.roles.cache.has(HIGH_STAFF_ROLE_ID) || message.author.id === message.guild.ownerId;
         if (!hasAdmin && !isStaff) {
@@ -511,7 +506,7 @@ client.on("messageCreate", async (message) => {
       }
 
       addComponentsXP(target.id, amount);
-      await message.reply(`✅ נוספו בהצלחה **${amount.toLocaleString()} XP** למשתמש ${target}. סך הכל כעת: **${Math.floor(getUserXP(target.id)).toLocaleString()} XP**.`);
+      await message.reply(`✅ נוספו בהצלחה **${amount.toLocaleString()} XP** למשתמש ${target}.`);
 
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
       if (logChannel) {
@@ -519,15 +514,13 @@ client.on("messageCreate", async (message) => {
           .setTitle("➕ הוספת XP על ידי מנהל")
           .setColor("#2ecc71")
           .addFields(
-            { name: "👮 המנהל המבצע:", value: `${message.author} (${message.author.id})`, inline: true },
-            { name: "👤 המשתמש שקיבל:", value: `${target} (${target.id})`, inline: true },
-            { name: "💰 כמות ה-XP שנוספה:", value: `**${amount.toLocaleString()}** XP`, inline: false },
-            { name: "📊 סך הכל חדש:", value: `**${Math.floor(getUserXP(target.id)).toLocaleString()}** XP`, inline: false }
+            { name: "👮 המנהל המבצע:", value: `${message.author}`, inline: true },
+            { name: "👤 המשתמש שקיבל:", value: `${target}`, inline: true },
+            { name: "💰 כמות:", value: `**${amount.toLocaleString()}** XP` }
           )
           .setTimestamp();
         await logChannel.send({ embeds: [logEmbed] });
       }
-
     } catch (err) { console.error(err); }
     return;
   }
@@ -551,7 +544,7 @@ client.on("messageCreate", async (message) => {
       }
 
       addComponentsXP(target.id, -amount);
-      await message.reply(`🔻 הוסרו בהצלחה **${amount.toLocaleString()} XP** מהמשתמש ${target}. סך הכל כעת: **${Math.floor(getUserXP(target.id)).toLocaleString()} XP**.`);
+      await message.reply(`🔻 הוסרו בהצלחה **${amount.toLocaleString()} XP** מהמשתמש ${target}.`);
 
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
       if (logChannel) {
@@ -559,15 +552,13 @@ client.on("messageCreate", async (message) => {
           .setTitle("➖ הסרת XP על ידי מנהל")
           .setColor("#e74c3c")
           .addFields(
-            { name: "👮 המנהל המבצע:", value: `${message.author} (${message.author.id})`, inline: true },
-            { name: "👤 המשתמש שספג:", value: `${target} (${target.id})`, inline: true },
-            { name: "📉 כמות ה-XP שהוסרה:", value: `**${amount.toLocaleString()}** XP`, inline: false },
-            { name: "📊 סך הכל חדש:", value: `**${Math.floor(getUserXP(target.id)).toLocaleString()}** XP`, inline: false }
+            { name: "👮 המנהל המבצע:", value: `${message.author}`, inline: true },
+            { name: "👤 המשתמש שספג:", value: `${target}`, inline: true },
+            { name: "📉 כמות:", value: `**${amount.toLocaleString()}** XP` }
           )
           .setTimestamp();
         await logChannel.send({ embeds: [logEmbed] });
       }
-
     } catch (err) { console.error(err); }
     return;
   }
@@ -583,31 +574,10 @@ client.on("messageCreate", async (message) => {
       }
 
       const target = message.mentions.members.first();
+      if (!target) return await message.reply("❌ שימוש שגוי בפקודה. מבנה נכון: `!resetxp @שם_משתמש`");
 
-      if (!target) {
-        return await message.reply("❌ שימוש שגוי בפקודה. מבנה נכון: `!resetxp @שם_משתמש`");
-      }
-
-      const currentXpBeforeReset = Math.floor(getUserXP(target.id));
       resetUserXP(target.id);
-      
-      await message.reply(`🔄 ה-XP של המשתמש ${target} אופס לחלוטין ל-**0**! (היו לו **${currentXpBeforeReset.toLocaleString()}** XP לפני האיפוס).`);
-
-      const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
-      if (logChannel) {
-        const logEmbed = new EmbedBuilder()
-          .setTitle("🔄 איפוס מוחלט של XP")
-          .setColor("#3498db")
-          .addFields(
-            { name: "👮 המנהל המבצע:", value: `${message.author} (${message.author.id})`, inline: true },
-            { name: "👤 המשתמש שאיפסו לו:", value: `${target} (${target.id})`, inline: true },
-            { name: "📉 כמות שהייתה לפני האיפוס:", value: `**${currentXpBeforeReset.toLocaleString()}** XP`, inline: false },
-            { name: "📊 סך הכל חדש:", value: "**0** XP", inline: false }
-          )
-          .setTimestamp();
-        await logChannel.send({ embeds: [logEmbed] });
-      }
-
+      await message.reply(`🔄 ה-XP של המשתמש ${target} אופס לחלוטין ל-0!`);
     } catch (err) { console.error(err); }
     return;
   }
@@ -624,14 +594,10 @@ client.on("messageCreate", async (message) => {
         .setDescription(`המשתמש ${message.author} זקוק לעזרה של איש צוות במיידי.`)
         .addFields({ name: "📝 הסיבה לפנייה:", value: `\`\`\`${reason}\`\`\`` })
         .setColor("#ff0000")
-        .setTimestamp()
-        .setFooter({ text: `מזהה משתמש: ${message.author.id}` });
+        .setTimestamp();
 
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`help_claim_${message.author.id}`)
-          .setLabel("🔒 קח אחריות על הקריאה")
-          .setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId(`help_claim_${message.author.id}`).setLabel("🔒 קח אחריות על הקריאה").setStyle(ButtonStyle.Primary)
       );
 
       await message.channel.send({ embeds: [embed], components: [row] });
@@ -639,112 +605,176 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// אינטראקציות
+// ─── Interactions (Buttons, Menus, Modals) ───────────────────────────────────
+
 client.on("interactionCreate", async (interaction) => {
   
+  // 🎁 לוגיקת איסוף דרופ XP
   if (interaction.isButton() && interaction.customId === "xp_drop_claim") {
     try {
       const dropData = activeDrops.get(interaction.message.id);
-
-      if (!dropData) {
-        return await interaction.reply({ content: "❌ הדרופ הזה כבר נאסף על ידי מישהו אחר או שפג תוקפו!", ephemeral: true });
-      }
+      if (!dropData) return await interaction.reply({ content: "❌ הדרופ הזה כבר נאסף!", ephemeral: true });
 
       await interaction.deferReply();
       activeDrops.delete(interaction.message.id);
-
       addComponentsXP(interaction.user.id, dropData.amount);
 
-      const originalEmbed = interaction.message.embeds[0];
-      const updatedEmbed = EmbedBuilder.from(originalEmbed)
-        .setDescription(`המנהל <@${dropData.creatorId}> זרק **${dropData.amount.toLocaleString()} XP** באוויר!\n\n🎉 **הדרופ נאסף!** הזוכה המאושר הוא: ${interaction.user}`)
+      const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+        .setDescription(`המנהל <@${dropData.creatorId}> זרק **${dropData.amount.toLocaleString()} XP** באוויר!\n\n🎉 **הדרופ נאסף!** הזוכה: ${interaction.user}`)
         .setColor("#7f8c8d");
 
-      const disabledButton = new ButtonBuilder()
-        .setCustomId("xp_drop_claimed_done")
-        .setLabel("🔒 נאסף בהצלחה")
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true);
+      const disabledButton = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("xp_drop_claimed_done").setLabel("🔒 נאסף").setStyle(ButtonStyle.Secondary).setDisabled(true)
+      );
+      await interaction.message.edit({ embeds: [updatedEmbed], components: [disabledButton] }).catch(() => null);
 
-      const updatedRow = new ActionRowBuilder().addComponents(disabledButton);
-      await interaction.message.edit({ embeds: [updatedEmbed], components: [updatedRow] }).catch(() => null);
-
-      await interaction.editReply({
-        content: `🎉 כל הכבוד ${interaction.user}! אספת בהצלחה **${dropData.amount.toLocaleString()} XP**! סך הכל כעת: **${Math.floor(getUserXP(interaction.user.id)).toLocaleString()} XP**.`
-      });
-
-      const logChannel = interaction.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
-      if (logChannel) {
-        const dropLog = new EmbedBuilder()
-          .setTitle("🎁 תיעוד איסוף דרופ XP")
-          .setColor("#e67e22")
-          .addFields(
-            { name: "👑 יוצר הדרופ:", value: `<@${dropData.creatorId}> (${dropData.creatorId})`, inline: true },
-            { name: "⚡ הזוכה המהיר:", value: `${interaction.user} (${interaction.user.id})`, inline: true },
-            { name: "💰 כמות ה-XP:", value: `**${dropData.amount.toLocaleString()}** XP`, inline: false }
-          )
-          .setTimestamp();
-        await logChannel.send({ embeds: [dropLog] });
-      }
-
-    } catch (err) { console.error("[Claim Drop Error]", err.message); }
+      await interaction.editReply({ content: `🎉 אספת בהצלחה **${dropData.amount.toLocaleString()} XP**!` });
+    } catch (err) { console.error(err); }
     return;
   }
 
+  // 🛒 בחירה מהחנות (רולים / חדר פרטי)
   if (interaction.isStringSelectMenu() && interaction.customId === "shop_role_select") {
+    const chosenKey = interaction.values[0];
+    const userXp = getUserXP(interaction.user.id);
+
+    // מקרה א': המשתמש בחר לקנות חדר וויס פרטי 👑
+    if (chosenKey === "buy_private_voice") {
+      if (userXp < PRIVATE_VOICE_PRICE) {
+        return await interaction.reply({
+          content: `❌ אין לך מספיק XP! חדר פרטי עולה **${PRIVATE_VOICE_PRICE.toLocaleString()}** XP, ולך יש כרגע **${Math.floor(userXp).toLocaleString()}** XP.`,
+          ephemeral: true
+        });
+      }
+
+      // פתיחת חלון קופץ (Modal) לשאול אותו איך לקרוא לחדר
+      const modal = new ModalBuilder()
+        .setCustomId("private_voice_name_modal")
+        .setTitle("👑 הקמת חדר וויס פרטי משלך");
+
+      const nameInput = new TextInputBuilder()
+        .setCustomId("voice_channel_name_input")
+        .setLabel("איך אתם רוצים לקרוא לוויס שלכם?")
+        .setPlaceholder("לדוגמה: החדר המטורף של זוקו")
+        .setStyle(TextInputStyle.Short)
+        .setMinLength(2)
+        .setMaxLength(30)
+        .setRequired(true);
+
+      const actionRow = new ActionRowBuilder().addComponents(nameInput);
+      modal.addComponents(actionRow);
+
+      return await interaction.showModal(modal);
+    }
+
+    // מקרה ב': קניית רול רגיל
     try {
       await interaction.deferReply({ ephemeral: true });
-      const chosenKey = interaction.values[0];
       const roleData = SHOP_ROLES[chosenKey];
-
-      if (!roleData) {
-        return await interaction.editReply({ content: "❌ שגיאה: הרול שנבחר לא נמצא במערכת החנות." });
-      }
+      if (!roleData) return await interaction.editReply({ content: "❌ מוצר לא נמצא." });
 
       const member = interaction.member;
-      const userXp = getUserXP(interaction.user.id);
-
-      if (member.roles.cache.has(roleData.id)) {
-        return await interaction.editReply({ content: `❌ כבר יש לך את הרול ${roleData.emoji} **${roleData.name}** במשתמש!` });
-      }
+      if (member.roles.cache.has(roleData.id)) return await interaction.editReply({ content: `❌ כבר יש לך את הרול הזה!` });
 
       if (userXp < roleData.price) {
-        const missingXp = roleData.price - userXp;
-        return await interaction.editReply({ 
-          content: `❌ אין לך מספיק XP! הרול עולה **${roleData.price.toLocaleString()}** XP, ולך יש כרגע **${Math.floor(userXp).toLocaleString()}** XP (חסר לך עוד **${Math.ceil(missingXp).toLocaleString()}** XP).` 
-        });
+        return await interaction.editReply({ content: `❌ אין לך מספיק XP!` });
       }
 
       addComponentsXP(interaction.user.id, -roleData.price);
       await member.roles.add(roleData.id);
 
-      await interaction.editReply({ 
-        content: `🎉 תתחדש! קנית בהצלחה את הרול <@&${roleData.id}> תמורת **${roleData.price.toLocaleString()}** XP!\n📊 יתרת ה-XP החדשה שלך: **${Math.floor(getUserXP(interaction.user.id)).toLocaleString()}** XP.` 
-      });
+      await interaction.editReply({ content: `🎉 קנית בהצלחה את הרול <@&${roleData.id}> תמורת **${roleData.price.toLocaleString()}** XP!` });
 
       const logChannel = interaction.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
       if (logChannel) {
-        const buyLogEmbed = new EmbedBuilder()
-          .setTitle("🛍️ רכישת רול בחנות ה-XP")
+        const buyLog = new EmbedBuilder()
+          .setTitle("🛍️ רכישת רול בחנות")
           .setColor("#9b59b6")
+          .setDescription(`${interaction.user} רכש את הרול <@&${roleData.id}> תמורת ${roleData.price.toLocaleString()} XP.`)
+          .setTimestamp();
+        await logChannel.send({ embeds: [buyLog] });
+      }
+    } catch (err) { console.error(err); }
+    return;
+  }
+
+  // 📝 קבלת התשובה מהחלון הקופץ ויצירת החדר הפרטי
+  if (interaction.isModalSubmit() && interaction.customId === "private_voice_name_modal") {
+    try {
+      await interaction.deferReply({ ephemeral: true });
+      const channelName = interaction.fields.getTextInputValue("voice_channel_name_input");
+      const userXp = getUserXP(interaction.user.id);
+
+      // בדיקה כפולה של ה-XP לביטחון
+      if (userXp < PRIVATE_VOICE_PRICE) {
+        return await interaction.editReply({ content: "❌ אירעה שגיאה, אין לך מספיק XP כרגע." });
+      }
+
+      const guild = interaction.guild;
+
+      // הגדרת הרשאות חסינות: כולם חסומים, לקונה יש גישה + הרשאת להעביר אנשים!
+      const permissionOverwrites = [
+        {
+          id: guild.roles.everyone.id,
+          deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect], // כולם לא יכולים לראות או להיכנס
+        },
+        {
+          id: interaction.user.id,
+          allow: [
+            PermissionFlagsBits.ViewChannel, 
+            PermissionFlagsBits.Connect, 
+            PermissionFlagsBits.Speak,
+            PermissionFlagsBits.MoveMembers // 👑 ההרשאה המיוחדת שמאפשרת להעביר אנשים בתוך החדר הזה בלי רול!
+          ],
+        }
+      ];
+
+      // מתן גישה גם לצוות השרת כדי שיוכלו לעזור/לפקח במקרה הצורך
+      ALL_STAFF_IDS.forEach(roleId => {
+        permissionOverwrites.push({
+          id: roleId,
+          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak, PermissionFlagsBits.MoveMembers],
+        });
+      });
+
+      // יצירת חדר הוויס בפועל בקטגוריה הייעודית
+      const newVoiceChannel = await guild.channels.create({
+        name: `👑 | ${channelName}`,
+        type: ChannelType.GuildVoice,
+        parent: PRIVATE_VOICE_CATEGORY_ID,
+        permissionOverwrites: permissionOverwrites
+      });
+
+      // חיוב ה-XP של המשתמש
+      addComponentsXP(interaction.user.id, -PRIVATE_VOICE_PRICE);
+
+      await interaction.editReply({
+        content: `🎉 **מזל טוב! החדר הפרטי שלך נוצר בהצלחה!**\nחדר: ${newVoiceChannel}\n\n👑 **ההרשאות שלך בחדר:**\n• החדר נעול לחלוטין לאחרים.\n• קיבלת הרשאת **Move Members** מיוחדת בתוך החדר, מה שאומר שאתה יכול לגרור חברים פנימה או לזרוק אותם החוצה בחופשיות ובלי שום רול ניהולי!`
+      });
+
+      // לוג בחדר הלוגים של הצוות
+      const logChannel = guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
+      if (logChannel) {
+        const privateVoiceLog = new EmbedBuilder()
+          .setTitle("👑 רכישת חדר וויס פרטי")
+          .setColor("#1abc9c")
           .addFields(
             { name: "👤 הקונה:", value: `${interaction.user} (${interaction.user.id})`, inline: true },
-            { name: "🏷️ הרול שנרכש:", value: `<@&${roleData.id}>`, inline: true },
-            { name: "📉 עלות הרכישה:", value: `**${roleData.price.toLocaleString()}** XP`, inline: false },
-            { name: "📊 יתרת XP מעודכנת:", value: `**${Math.floor(getUserXP(interaction.user.id)).toLocaleString()}** XP`, inline: false }
+            { name: "🔊 שם החדר שנבחר:", value: `\`${channelName}\``, inline: true },
+            { name: "💰 עלות:", value: `**${PRIVATE_VOICE_PRICE.toLocaleString()}** XP` }
           )
           .setTimestamp();
-        await logChannel.send({ embeds: [buyLogEmbed] });
+        await logChannel.send({ embeds: [privateVoiceLog] });
       }
 
     } catch (err) {
-      console.error("[Shop Purchase Error]", err.message);
-      await interaction.editReply({ content: "❌ אירעה שגיאה טכנית בזמן הניסיון להעניק את הרול. פנה למנהל השרת." });
+      console.error("[Create Private Voice Error]", err.message);
+      await interaction.editReply({ content: "❌ אירעה שגיאה טכנית במהלך יצירת חדר הוויס. פנה למנהל השרת." });
     }
     return;
   }
 
-  // תפריט בחירת נושא הטיקט - כולל שאלון בחינות אוטומטי!
+  // 🎫 תפריט בחירת נושא הטיקט (כולל בחינות הצוות)
   if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type_select") {
     try {
       await interaction.deferReply({ ephemeral: true });
@@ -772,29 +802,23 @@ client.on("interactionCreate", async (interaction) => {
 
       const ticketEmbed = new EmbedBuilder()
         .setTitle(`טיקט בנושא: ${choice.replace("-", " ")}`)
-        .setDescription(`שלום ${interaction.user}, צוות השרת קיבל את פנייתך בנושא **${choice.replace("-", " ")}**.\nאנא פרט את סיבת הפנייה כאן ונציג יתפנה אליך בהקדם.`)
+        .setDescription(`שלום ${interaction.user}, צוות השרת קיבל את פנייתך.\nאנא פרט את סיבת הפנייה כאן ונציג יתפנה אליך בהקדם.`)
         .setColor("#00ffea")
         .setTimestamp();
 
       const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`ticket_claim_${interaction.user.id}`).setLabel("🤝 קח אחריות על הטיקט").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`ticket_claim_${interaction.user.id}`).setLabel("🤝 קח אחריות").setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId("ticket_close").setLabel("🔒 סגור טיקט").setStyle(ButtonStyle.Danger)
       );
 
       const staffMentions = TICKET_PING_ROLES.map(id => `<@&${id}>`).join(" ");
-      
-      await ticketChannel.send({
-        content: `${interaction.user} ${staffMentions}`,
-        embeds: [ticketEmbed],
-        components: [actionRow]
-      });
+      await ticketChannel.send({ content: `${interaction.user} ${staffMentions}`, embeds: [ticketEmbed], components: [actionRow] });
 
-      // 📝 שליחת שאלות הבחינה רק אם נבחרה האופציה "בחינה-לצוות"
       if (choice === "בחינה-לצוות") {
         const examEmbed = new EmbedBuilder()
           .setTitle("📝 שאלון קבלה לצוות השרת")
           .setDescription(
-            "על מנת שנוכל לבדוק את התאמתך, עליך להעתיק את השאלות הבאות, לענות עליהן בהרחבה ובפירוט כאן בחדר הטיקט:\n\n" +
+            "על מנת שנוכל לבדוק את התאמתך, עליך להעתיק את השאלות הבאות ולענות עליהן כאן בטיקט:\n\n" +
             "**👋 פרטים כלליים:**\n" +
             "1. מה שמך?\n" +
             "2. מה הוא גילך?\n" +
@@ -809,18 +833,12 @@ client.on("interactionCreate", async (interaction) => {
             "9. כיצד תפעל כאשר מישהו שמעליך ברול מנצל גישות?\n\n" +
             "💬 *התשובות יתקבלו וייבדקו בהמשך על ידי צוות הניהול הגבוה! בהצלחה!*"
           )
-          .setColor("#f39c12")
-          .setFooter({ text: "אנא שמרו על סדר ותשובות רציניות." });
-
+          .setColor("#f39c12");
         await ticketChannel.send({ embeds: [examEmbed] });
       }
 
       await interaction.editReply({ content: `✅ הטיקט שלך נפתח בהצלחה בחדר: ${ticketChannel}` });
-
-    } catch (err) {
-      console.error("[Create Ticket Error]", err.message);
-      await interaction.editReply({ content: "❌ אירעה שגיאה ביצירת הטיקט." });
-    }
+    } catch (err) { console.error(err); }
     return;
   }
 
@@ -832,15 +850,13 @@ client.on("interactionCreate", async (interaction) => {
         .setCustomId("ticket_type_select")
         .setPlaceholder("🎯 בחר את נושא הפנייה שלך...")
         .addOptions(
-          new StringSelectMenuOptionBuilder().setLabel("בחינה לצוות").setValue("בחינה-לצוות").setDescription("הגשת מועמדות או בירור לגבי כניסה לצוות"),
-          new StringSelectMenuOptionBuilder().setLabel("עזרה").setValue("עזרה").setDescription("תמיכה כללית או בעיה בשרת"),
-          new StringSelectMenuOptionBuilder().setLabel("שת\"פ (שותפות)").setValue("שתפ").setDescription("סגירת שותפויות או פרויקטים"),
-          new StringSelectMenuOptionBuilder().setLabel("תלונה").setValue("תלונה").setDescription("הגשת תלונה על משתמש או איש צוות")
+          new StringSelectMenuOptionBuilder().setLabel("בחינה לצוות").setValue("בחינה-לצוות"),
+          new StringSelectMenuOptionBuilder().setLabel("עזרה").setValue("עזרה"),
+          new StringSelectMenuOptionBuilder().setLabel("שת\"פ (שותפות)").setValue("שתפ"),
+          new StringSelectMenuOptionBuilder().setLabel("תלונה").setValue("תלונה")
         );
-
       const row = new ActionRowBuilder().addComponents(selectMenu);
-
-      await interaction.reply({ content: "אנא בחר מהתפריט הבא את הנושא המתאים ביותר לפנייה שלך:", components: [row], ephemeral: true });
+      await interaction.reply({ content: "אנא בחר מהתפריט את נושא הפנייה:", components: [row], ephemeral: true });
     } catch (err) { console.error(err); }
     return;
   }
@@ -848,23 +864,12 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.customId.startsWith("ticket_claim_")) {
     try {
       const member = interaction.member;
+      const hasPermission = ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === interaction.guild.ownerId || member.permissions.has(PermissionFlagsBits.Administrator);
       
-      const hasPermission = 
-        ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || 
-        interaction.user.id === interaction.guild.ownerId ||
-        member.permissions.has(PermissionFlagsBits.Administrator);
-      
-      if (!hasPermission) {
-        return await interaction.reply({ content: "❌ רק צוות השרת או משתמשים עם הרשאת Administrator מורשים לקחת אחריות על טיקטים!", ephemeral: true });
-      }
+      if (!hasPermission) return await interaction.reply({ content: "❌ רק צוות השרת מורשה לקחת טיקטים!", ephemeral: true });
 
       const requesterId = interaction.customId.split("_")[2];
-      const oldEmbed = interaction.message.embeds[0];
-
-      const updatedEmbed = EmbedBuilder.from(oldEmbed)
-        .addFields({ name: "📌 סטטוס טיקט:", value: `הטיקט נלקח לטיפול על ידי המנהל/איש הצוות ${interaction.user}` })
-        .setColor("#2ecc71");
-
+      const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).addFields({ name: "📌 סטטוס טיקט:", value: `נלקח לטיפול על ידי ${interaction.user}` }).setColor("#2ecc71");
       const updatedRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`ticket_claimed_by_${interaction.user.id}`).setLabel("✔ הטיקט בטיפול").setStyle(ButtonStyle.Secondary).setDisabled(true), 
         new ButtonBuilder().setCustomId("ticket_close").setLabel("🔒 סגור טיקט").setStyle(ButtonStyle.Danger)
@@ -872,7 +877,6 @@ client.on("interactionCreate", async (interaction) => {
 
       await interaction.update({ embeds: [updatedEmbed], components: [updatedRow] });
       await interaction.channel.send({ content: `💼 **הטיקט נלקח לטיפול:** ${interaction.user} יעזור לך כעת, <@${requesterId}>.` });
-
     } catch (err) { console.error(err); }
     return;
   }
@@ -880,58 +884,31 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.customId === "ticket_close") {
     try {
       const member = interaction.member;
-      
-      const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
-      const hasAllowedRole = TICKET_CLOSE_ROLES.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === interaction.guild.ownerId;
+      const hasAllowedRole = TICKET_CLOSE_ROLES.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === interaction.guild.ownerId || member.permissions.has(PermissionFlagsBits.Administrator);
 
-      if (!hasAdmin && !hasAllowedRole) {
-        return await interaction.reply({ content: "❌ רק דרגות High Staff ,Staff או משתמשים עם הרשאת Administrator מורשים לסגור את הטיקט!", ephemeral: true });
-      }
+      if (!hasAllowedRole) return await interaction.reply({ content: "❌ אין לך הרשאה לסגור טיקט!", ephemeral: true });
 
-      await interaction.reply({ content: "🔒 הטיקט נסגר על ידי הצוות ויימחק לצמיתות בעוד כ-5 שניות..." });
-      
-      setTimeout(async () => {
-        await interaction.channel.delete().catch(() => null);
-      }, 5000);
-
+      await interaction.reply({ content: "🔒 הטיקט נסגר ויימחק בעוד כ-5 שניות..." });
+      setTimeout(async () => { await interaction.channel.delete().catch(() => null); }, 5000);
     } catch (err) { console.error(err); }
     return;
   }
 
-  // לוגיקת כפתור האימות המושקע ✨
   if (interaction.customId === "verify_button") {
     try {
       const member = interaction.member;
+      if (member.roles.cache.has(VERIFY_ROLE_ID)) return await interaction.reply({ content: "❌ אתה כבר מאומת!", ephemeral: true });
       
-      if (member.roles.cache.has(VERIFY_ROLE_ID)) {
-        return await interaction.reply({ content: "❌ אתה כבר מאומת ומחזיק ברול הממבר בשרת!", ephemeral: true });
-      }
-      
-      // הענקת הרול
       await member.roles.add(VERIFY_ROLE_ID);
-      
-      // תגובה קופצת מהירה למשתמש בדיסקורד
-      await interaction.reply({ content: "🎉 אומתת בהצלחה! הרול הוענק וכל ערוצי השרת נפתחו עבורך.", ephemeral: true });
+      await interaction.reply({ content: "🎉 אומתת בהצלחה! כל ערוצי השרת נפתחו עבורך.", ephemeral: true });
 
-      // הודעה פרטית (DM) חגיגית ומעוצבת ישירות למשתמש
       const welcomeDmEmbed = new EmbedBuilder()
         .setTitle(`🎉 ברוכים הבאים אל ${interaction.guild.name}!`)
-        .setDescription(
-          `שלום ${interaction.user},\n` +
-          `עברת בהצלחה את מערכת האימות האוטומטית וקיבלת את הרול **Member** בשרת שלנו!\n\n` +
-          `**מה תוכל לעשות עכשיו?**\n` +
-          `💬 להתכתב בערוצי הטקסט השונים.\n` +
-          `🔊 להיכנס לחדרי הוויס ולדבר עם חברים.\n` +
-          `📊 לצבור **XP** אוטומטית ולקנות איתו רולים מטורפים בחנות השרת (\`shop.panel\`)!\n\n` +
-          `שתהיה גלישה מהנה ובטוחה! 🚀`
-        )
+        .setDescription(`שלום ${interaction.user},\nעברת בהצלחה את מערכת האימות האוטומטית וקיבלת את הרול **Member**!`)
         .setColor("#00ff7f")
         .setTimestamp();
 
-      await member.send({ embeds: [welcomeDmEmbed] }).catch(() => {
-        console.log(`[Verify System] Could not send welcome DM to ${member.user.tag} because their DMs are closed.`);
-      });
-
+      await member.send({ embeds: [welcomeDmEmbed] }).catch(() => {});
     } catch (err) { console.error(err); }
     return;
   }
@@ -940,51 +917,32 @@ client.on("interactionCreate", async (interaction) => {
     try {
       const member = interaction.member;
       const guild = interaction.guild;
-      
-      const hasPermission = 
-        ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || 
-        interaction.user.id === guild.ownerId ||
-        member.permissions.has(PermissionFlagsBits.Administrator);
+      const hasPermission = ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === guild.ownerId || member.permissions.has(PermissionFlagsBits.Administrator);
 
-      if (!hasPermission) {
-        return await interaction.reply({ content: "❌ אינך מורשה לטפל בקריאות עזרה. כפתור זה מיועד לצוות הניהול בלבד!", ephemeral: true });
-      }
+      if (!hasPermission) return await interaction.reply({ content: "❌ אינך מורשה לטפל בקריאות עזרה!", ephemeral: true });
 
       let titlePrefix = "איש צוות";
-      if (interaction.user.id === guild.ownerId || member.roles.cache.has(OWNER_ROLE_ID)) {
-        titlePrefix = "האוונר";
-      } else if (member.roles.cache.has(CO_OWNER_ROLE_ID)) {
-        titlePrefix = "הקו-אוונר";
-      }
+      if (interaction.user.id === guild.ownerId || member.roles.cache.has(OWNER_ROLE_ID)) titlePrefix = "האוונר";
+      else if (member.roles.cache.has(CO_OWNER_ROLE_ID)) titlePrefix = "הקו-אוונר";
 
       const requesterId = interaction.customId.split("_")[2];
-      
-      const oldEmbed = interaction.message.embeds[0];
-      const updatedEmbed = EmbedBuilder.from(oldEmbed)
-        .setColor("#2ecc71") 
-        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} ${interaction.user}` });
+      const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).setColor("#2ecc71").addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} ${interaction.user}` });
 
       await interaction.update({ embeds: [updatedEmbed], components: [] });
-
-      await interaction.followUp({ content: `✅ לקחת את קריאת העזרה של <@${requesterId}> בהצלחה. אנא פנה אליו בהקדם!`, ephemeral: true });
+      await interaction.followUp({ content: `✅ לקחת את קריאת העזרה בהצלחה.`, ephemeral: true });
 
       const targetUser = await guild.members.fetch(requesterId).catch(() => null);
       if (targetUser) {
-        await targetUser.send({
-          content: `👋 שלום, ${titlePrefix} **${interaction.user.username}** לקח אחריות על קריאת העזרה שלך בשרת והוא איתך עכשיו ומטפל בפנייה שלך!`
-        }).catch(() => { console.log(`[Help System] Could not send DM to user ${requesterId}.`); });
+        await targetUser.send({ content: `👋 שלום, ${titlePrefix} **${interaction.user.username}** לקח אחריות על קריאת העזרה שלך והוא מטפל בה כעת!` }).catch(() => {});
       }
-
-    } catch (err) { console.error("[Help Interaction Error]", err.message); }
+    } catch (err) { console.error(err); }
   }
 });
 
 // ─── Anti-Nuke System Events ──────────────────────────────────────────────────
 
 client.on("channelDelete", async (channel) => {
-  if (!channel.guild) return;
-  if (channel.parentId === TICKET_CATEGORY_ID) return;
-  
+  if (!channel.guild || channel.parentId === TICKET_CATEGORY_ID || channel.parentId === PRIVATE_VOICE_CATEGORY_ID) return;
   try {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     const logs = await channel.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelDelete });
@@ -1000,21 +958,15 @@ client.on("channelDelete", async (channel) => {
       parent: channel.parentId ?? undefined,
       topic: channel.topic ?? undefined,
       nsfw: channel.nsfw ?? false,
-      permissionOverwrites: channel.permissionOverwrites?.cache.map((o) => ({
-        id: o.id,
-        allow: o.allow.bitfield,
-        deny: o.deny.bitfield,
-      })) ?? [],
+      permissionOverwrites: channel.permissionOverwrites?.cache.map((o) => ({ id: o.id, allow: o.allow.bitfield, deny: o.deny.bitfield })) ?? [],
     });
 
-    await punishUser(channel.guild, executor.id, `Deleted channel/category without permission: #${channel.name}`);
+    await punishUser(channel.guild, executor.id, `Deleted channel/category: #${channel.name}`);
   } catch (err) { console.error(err.message); }
 });
 
 client.on("channelCreate", async (channel) => {
-  if (!channel.guild) return;
-  if (channel.parentId === TICKET_CATEGORY_ID) return;
-
+  if (!channel.guild || channel.parentId === TICKET_CATEGORY_ID || channel.parentId === PRIVATE_VOICE_CATEGORY_ID) return;
   try {
     const logs = await channel.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelCreate });
     const logEntry = logs.entries.first();
@@ -1048,7 +1000,6 @@ client.on("roleDelete", async (role) => {
       mentionable: role.mentionable,
       position: role.position,
     });
-
     await punishUser(role.guild, executor.id, `Deleted server role: ${role.name}`);
   } catch (err) { console.error(err.message); }
 });
@@ -1072,44 +1023,23 @@ client.on("roleCreate", async (role) => {
 client.on("guildAuditLogEntryCreate", async (auditLogEntry, guild) => {
   try {
     const { action, executorId } = auditLogEntry;
-    if (!executorId) return;
-    if (await shouldBypass(guild, executorId)) return;
+    if (!executorId || await shouldBypass(guild, executorId)) return;
 
-    if (action === AuditLogEvent.EmojiDelete) {
-      await punishUser(guild, executorId, "Deleted a server emoji");
-    }
-
-    if (action === AuditLogEvent.WebhookCreate || action === AuditLogEvent.WebhookDelete) {
-      await punishUser(guild, executorId, "Unauthorized Webhook manipulation");
-    }
-
-    if (action === AuditLogEvent.GuildUpdate) {
-      await punishUser(guild, executorId, "Attempted to modify crucial server settings (Name/Icon)");
-    }
-
+    if (action === AuditLogEvent.EmojiDelete) await punishUser(guild, executorId, "Deleted a server emoji");
+    if (action === AuditLogEvent.WebhookCreate || action === AuditLogEvent.WebhookDelete) await punishUser(guild, executorId, "Unauthorized Webhook manipulation");
+    if (action === AuditLogEvent.GuildUpdate) await punishUser(guild, executorId, "Attempted to modify server settings");
+    
     if (action === AuditLogEvent.RoleUpdate) {
       const logs = await guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleUpdate });
       const entry = logs.entries.first();
       if (entry) {
         const hasAdminUpdate = entry.changes.some(c => c.key === "permissions" && (BigInt(c.new) & PermissionFlagsBits.Administrator));
-        if (hasAdminUpdate) {
-          await punishUser(guild, executorId, "Granted dangerous Administrator permissions to a role");
-        }
+        if (hasAdminUpdate) await punishUser(guild, executorId, "Granted dangerous Administrator permissions");
       }
     }
 
-    if (action === AuditLogEvent.MemberBanAdd) {
-      if (isMassActionTriggered(executorId, "mass_ban")) {
-        await punishUser(guild, executorId, "Mass banning users (Nuke attempt)");
-      }
-    }
-
-    if (action === AuditLogEvent.MemberKick) {
-      if (isMassActionTriggered(executorId, "mass_kick")) {
-        await punishUser(guild, executorId, "Mass kicking users (Nuke attempt)");
-      }
-    }
-
+    if (action === AuditLogEvent.MemberBanAdd && isMassActionTriggered(executorId, "mass_ban")) await punishUser(guild, executorId, "Mass banning users");
+    if (action === AuditLogEvent.MemberKick && isMassActionTriggered(executorId, "mass_kick")) await punishUser(guild, executorId, "Mass kicking users");
   } catch (err) { console.error(err.message); }
 });
 
