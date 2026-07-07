@@ -114,6 +114,8 @@ const MAX_ACTIONS_ALLOWED = 3;
 const ACTION_RESET_TIME = 10000; 
 
 const userActionLog = new Map();
+
+// 🔒 מסד הנתונים של ה-XP - נשאר בטוח מחוץ לשינויי הפקודות והאינטראקציות
 const xpDatabase = new Map();
 const activeDrops = new Map();
 
@@ -246,7 +248,7 @@ setInterval(() => {
 client.once("ready", async () => {
   console.log(`[Bot] Online as ${client.user.tag}`);
   
-  // 🔴 השורה שגורמת לבוט להיות בסטטוס אדום (Do Not Disturb) קבוע
+  // 🔴 סטטוס Do Not Disturb
   client.user.setStatus("dnd");
   console.log("[Bot] Status set to Do Not Disturb (dnd)");
 
@@ -314,16 +316,31 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  // פאנל אימות משודרג ומושקע במיוחד ✨
   if (message.content === "verify.panel") {
     try {
       await message.delete().catch(() => null);
+      
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("verify_button").setLabel("אימות").setStyle(ButtonStyle.Success)
+        new ButtonBuilder()
+          .setCustomId("verify_button")
+          .setLabel("✅ לחץ כאן לאימות")
+          .setStyle(ButtonStyle.Success)
       );
+
       const embed = new EmbedBuilder()
-        .setTitle("מערכת אימות השרת")
-        .setDescription("לחץ על הכפתור למטה כדי לפתוח את החדרים בשרת ולקבל גישה!")
-        .setColor("#00ff00");
+        .setTitle("🔒 מגן האבטחה — מערכת אימות המשתמשים")
+        .setDescription(
+          "שלום וברוכים הבאים לשרת הרשמי שלנו! 👋\n\n" +
+          "כדי למנוע כניסת בוטים וריידים, ולשמור על סביבה בטוחה ומהנה לכולם, עליך לעבור אימות קצר.\n\n" +
+          "**כיצד מתאמתים?**\n" +
+          "לחץ על כפתור ה-`✅ לחץ כאן לאימות` הירוק שלמטה.\n" +
+          "מיד לאחר מכן תקבל את רול הממבר, וכל ערוצי השרת, הצ'אטים והוויסים ייפתחו בפניך באופן אוטומטי!"
+        )
+        .setColor("#00ff7f")
+        .setThumbnail(message.guild.iconURL({ dynamic: true }))
+        .setFooter({ text: "מערכת הגנה אוטומטית • אנא שמרו על חוקי השרת", iconURL: client.user.displayAvatarURL() })
+        .setTimestamp();
 
       await message.channel.send({ embeds: [embed], components: [row] });
     } catch (err) { console.error(err); }
@@ -727,6 +744,7 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
+  // תפריט בחירת נושא הטיקט - כולל שאלון בחינות אוטומטי!
   if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type_select") {
     try {
       await interaction.deferReply({ ephemeral: true });
@@ -753,8 +771,8 @@ client.on("interactionCreate", async (interaction) => {
       });
 
       const ticketEmbed = new EmbedBuilder()
-        .setTitle(`טיקט בנושא: ${choice}`)
-        .setDescription(`שלום ${interaction.user}, צוות השרת קיבל את פנייתך בנושא **${choice}**.\nאנא פרט את סיבת הפנייה כאן ונציג יתפנה אליך בהקדם.`)
+        .setTitle(`טיקט בנושא: ${choice.replace("-", " ")}`)
+        .setDescription(`שלום ${interaction.user}, צוות השרת קיבל את פנייתך בנושא **${choice.replace("-", " ")}**.\nאנא פרט את סיבת הפנייה כאן ונציג יתפנה אליך בהקדם.`)
         .setColor("#00ffea")
         .setTimestamp();
 
@@ -770,6 +788,32 @@ client.on("interactionCreate", async (interaction) => {
         embeds: [ticketEmbed],
         components: [actionRow]
       });
+
+      // 📝 שליחת שאלות הבחינה רק אם נבחרה האופציה "בחינה-לצוות"
+      if (choice === "בחינה-לצוות") {
+        const examEmbed = new EmbedBuilder()
+          .setTitle("📝 שאלון קבלה לצוות השרת")
+          .setDescription(
+            "על מנת שנוכל לבדוק את התאמתך, עליך להעתיק את השאלות הבאות, לענות עליהן בהרחבה ובפירוט כאן בחדר הטיקט:\n\n" +
+            "**👋 פרטים כלליים:**\n" +
+            "1. מה שמך?\n" +
+            "2. מה הוא גילך?\n" +
+            "3. ספר לנו על עצמך (מעל 20 מילים):\n\n" +
+            "**🧠 מוטיבציה ויכולות:**\n" +
+            "4. מדוע אתה רוצה לבוא דווקא להיות צוות ומה שונה ממך מכל מתמודד אחר?\n" +
+            "5. איך תתרום ותעזור בשרת?\n\n" +
+            "**🔥 סיטואציות לבחינה (חובה לענות במפורט):**\n" +
+            "6. כיצד תפעל שיש רייד בשרת?\n" +
+            "7. כיצד תפעל כאשר מישהו אומר לך ששתי ממברים מציקים לו בוויס?\n" +
+            "8. כיצד תפעל כאשר מישהו מקלל בוויס?\n" +
+            "9. כיצד תפעל כאשר מישהו שמעליך ברול מנצל גישות?\n\n" +
+            "💬 *התשובות יתקבלו וייבדקו בהמשך על ידי צוות הניהול הגבוה! בהצלחה!*"
+          )
+          .setColor("#f39c12")
+          .setFooter({ text: "אנא שמרו על סדר ותשובות רציניות." });
+
+        await ticketChannel.send({ embeds: [examEmbed] });
+      }
 
       await interaction.editReply({ content: `✅ הטיקט שלך נפתח בהצלחה בחדר: ${ticketChannel}` });
 
@@ -854,14 +898,40 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
+  // לוגיקת כפתור האימות המושקע ✨
   if (interaction.customId === "verify_button") {
     try {
       const member = interaction.member;
+      
       if (member.roles.cache.has(VERIFY_ROLE_ID)) {
-        return await interaction.reply({ content: "אתה כבר מאומת בשרת!", ephemeral: true });
+        return await interaction.reply({ content: "❌ אתה כבר מאומת ומחזיק ברול הממבר בשרת!", ephemeral: true });
       }
+      
+      // הענקת הרול
       await member.roles.add(VERIFY_ROLE_ID);
-      await interaction.reply({ content: "אוממת בהצלחה קיבלת גישה לחדרים", ephemeral: true });
+      
+      // תגובה קופצת מהירה למשתמש בדיסקורד
+      await interaction.reply({ content: "🎉 אומתת בהצלחה! הרול הוענק וכל ערוצי השרת נפתחו עבורך.", ephemeral: true });
+
+      // הודעה פרטית (DM) חגיגית ומעוצבת ישירות למשתמש
+      const welcomeDmEmbed = new EmbedBuilder()
+        .setTitle(`🎉 ברוכים הבאים אל ${interaction.guild.name}!`)
+        .setDescription(
+          `שלום ${interaction.user},\n` +
+          `עברת בהצלחה את מערכת האימות האוטומטית וקיבלת את הרול **Member** בשרת שלנו!\n\n` +
+          `**מה תוכל לעשות עכשיו?**\n` +
+          `💬 להתכתב בערוצי הטקסט השונים.\n` +
+          `🔊 להיכנס לחדרי הוויס ולדבר עם חברים.\n` +
+          `📊 לצבור **XP** אוטומטית ולקנות איתו רולים מטורפים בחנות השרת (\`shop.panel\`)!\n\n` +
+          `שתהיה גלישה מהנה ובטוחה! 🚀`
+        )
+        .setColor("#00ff7f")
+        .setTimestamp();
+
+      await member.send({ embeds: [welcomeDmEmbed] }).catch(() => {
+        console.log(`[Verify System] Could not send welcome DM to ${member.user.tag} because their DMs are closed.`);
+      });
+
     } catch (err) { console.error(err); }
     return;
   }
