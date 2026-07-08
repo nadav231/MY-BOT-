@@ -1,4 +1,6 @@
 import express from "express";
+import fs from "fs";
+import path from "path";
 import {
   Client,
   GatewayIntentBits,
@@ -120,11 +122,42 @@ const MAX_ACTIONS_ALLOWED = 3;
 const ACTION_RESET_TIME = 10000; 
 
 const userActionLog = new Map();
-
-const xpDatabase = new Map();
 const activeDrops = new Map();
 
 let specialCommandUsesLeft = 5;
+
+// ─── JSON File Database System (שמירה קבועה) ──────────────────────────────────
+const DB_FILE_PATH = path.join(process.cwd(), "xp_database.json");
+const xpDatabase = new Map();
+
+function loadXPDatabase() {
+  try {
+    if (fs.existsSync(DB_FILE_PATH)) {
+      const data = fs.readFileSync(DB_FILE_PATH, "utf8");
+      const parsed = JSON.parse(data);
+      for (const [userId, xpValue] of Object.entries(parsed)) {
+        xpDatabase.set(userId, xpValue);
+      }
+      console.log(`[💾 Database] Loaded XP data for ${xpDatabase.size} users.`);
+    } else {
+      console.log("[💾 Database] No database file found. Creating a new one on save.");
+    }
+  } catch (err) {
+    console.error("[💾 Database Load Error]", err.message);
+  }
+}
+
+function saveXPDatabase() {
+  try {
+    const obj = Object.fromEntries(xpDatabase);
+    fs.writeFileSync(DB_FILE_PATH, JSON.stringify(obj, null, 2), "utf8");
+  } catch (err) {
+    console.error("[💾 Database Save Error]", err.message);
+  }
+}
+
+// טעינת הדאטה בייס מיד עם הפעלת הקובץ
+loadXPDatabase();
 
 const client = new Client({
   intents: [
@@ -150,10 +183,12 @@ function getUserXP(userId) {
 function addComponentsXP(userId, amount) {
   const currentXp = getUserXP(userId);
   xpDatabase.set(userId, Math.max(0, currentXp + amount));
+  saveXPDatabase(); // שמירה אוטומטית לקובץ בכל פעם שה-XP משתנה
 }
 
 function resetUserXP(userId) {
   xpDatabase.set(userId, 0);
+  saveXPDatabase(); // שמירה אוטומטית לקובץ
 }
 
 async function shouldBypass(guild, executorId) {
@@ -563,10 +598,10 @@ client.on("messageCreate", async (message) => {
   if (message.content.startsWith("!resetxp")) {
     try {
       const member = message.member;
-      const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+      const keywordsAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
       const isManagement = member.roles.cache.has(OWNER_ROLE_ID) || member.roles.cache.has(CO_OWNER_ROLE_ID) || message.author.id === message.guild.ownerId;
 
-      if (!hasAdmin && !isManagement) {
+      if (!keywordsAdmin && !isManagement) {
         return await message.reply("❌ רק Owner, Co-Owner או מנהלים עם הרשאת Administrator מורשים לאפס XP!");
       }
 
@@ -586,7 +621,6 @@ client.on("messageCreate", async (message) => {
 
       await message.delete().catch(() => null);
 
-      // ─── מושקע ומעוצב מחדש Help Embed ───────────────────
       const embed = new EmbedBuilder()
         .setTitle("🚨 קריאת עזרה דחופה — צוות השרת")
         .setDescription(`נפתחה קריאת עזרה חדשה שמחכה לטיפול של אחד מאנשי הצוות הזמינים בשרת.`)
@@ -923,13 +957,8 @@ client.on("interactionCreate", async (interaction) => {
         .setColor("#2ecc71")
         .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} ${interaction.user}` });
 
-      // עדכון ה-Embed והסרת הכפתור כדי שלא ילחצו עליו שוב
       await interaction.update({ embeds: [updatedEmbed], components: [] });
-      
-      // אישור זריז לצוות שהכל עבד
       await interaction.followUp({ content: `✅ לקחת את קריאת העזרה בהצלחה.`, ephemeral: true });
-
-      // שים לב: הקוד ששלח הודעה פרטית למשתמש שביקש עזרה נמחק מכאן לחלוטין!
     } catch (err) { console.error(err); }
   }
 });
