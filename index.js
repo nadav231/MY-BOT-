@@ -582,19 +582,29 @@ client.on("messageCreate", async (message) => {
   if (message.content.startsWith("!h")) {
     try {
       const args = message.content.slice(2).trim();
-      const reason = args.length > 0 ? args : "לא צוינה סיבה";
+      const reason = args.length > 0 ? args : "לא צוינה סיבה מדויקת";
 
       await message.delete().catch(() => null);
 
+      // ─── מושקע ומעוצב מחדש Help Embed ───────────────────
       const embed = new EmbedBuilder()
-        .setTitle("🚨 קריאת עזרה חדשה!")
-        .setDescription(`המשתמש ${message.author} זקוק לעזרה של איש צוות במיידי.`)
-        .addFields({ name: "📝 הסיבה לפנייה:", value: `\`\`\`${reason}\`\`\`` })
-        .setColor("#ff0000")
-        .setTimestamp();
+        .setTitle("🚨 קריאת עזרה דחופה — צוות השרת")
+        .setDescription(`נפתחה קריאת עזרה חדשה שמחכה לטיפול של אחד מאנשי הצוות הזמינים בשרת.`)
+        .setColor("#ff3333")
+        .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+        .addFields(
+          { name: "👤 המשתמש הפונה:", value: `${message.author} (\`${message.author.id}\`)`, inline: true },
+          { name: "📍 חדר הפנייה:", value: `${message.channel}`, inline: true },
+          { name: "📝 סיבת הבקשה לעזרה:", value: `\`\`\`fix\n${reason}\`\`\``, inline: false }
+        )
+        .setTimestamp()
+        .setFooter({ text: "מערכת קריאות עזרה • יש ללחוץ על הכפתור כדי לקחת אחריות", iconURL: client.user.displayAvatarURL() });
 
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`help_claim_${message.author.id}`).setLabel("🔒 קח אחריות על הקריאה").setStyle(ButtonStyle.Primary)
+        new ButtonBuilder()
+          .setCustomId(`help_claim_${message.author.id}`)
+          .setLabel("🔒 קח אחריות וטפל בפנייה")
+          .setStyle(ButtonStyle.Primary)
       );
 
       await message.channel.send({ embeds: [embed], components: [row] });
@@ -909,16 +919,17 @@ client.on("interactionCreate", async (interaction) => {
       if (interaction.user.id === guild.ownerId || member.roles.cache.has(OWNER_ROLE_ID)) titlePrefix = "האוונר";
       else if (member.roles.cache.has(CO_OWNER_ROLE_ID)) titlePrefix = "הקו-אוונר";
 
-      const requesterId = interaction.customId.split("_")[2];
-      const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).setColor("#2ecc71").addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} ${interaction.user}` });
+      const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+        .setColor("#2ecc71")
+        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} ${interaction.user}` });
 
+      // עדכון ה-Embed והסרת הכפתור כדי שלא ילחצו עליו שוב
       await interaction.update({ embeds: [updatedEmbed], components: [] });
+      
+      // אישור זריז לצוות שהכל עבד
       await interaction.followUp({ content: `✅ לקחת את קריאת העזרה בהצלחה.`, ephemeral: true });
 
-      const targetUser = await guild.members.fetch(requesterId).catch(() => null);
-      if (targetUser) {
-        await targetUser.send({ content: `👋 שלום, ${titlePrefix} **${interaction.user.username}** לקח אחריות על קריאת העזרה שלך והוא מטפל בה כעת!` }).catch(() => {});
-      }
+      // שים לב: הקוד ששלח הודעה פרטית למשתמש שביקש עזרה נמחק מכאן לחלוטין!
     } catch (err) { console.error(err); }
   }
 });
