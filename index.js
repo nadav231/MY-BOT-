@@ -126,9 +126,11 @@ const activeDrops = new Map();
 
 let specialCommandUsesLeft = 5;
 
-// ─── JSON File Database System (שמירה קבועה) ──────────────────────────────────
+// ─── JSON File Database System ─────────────────────────────────────────────────
 const DB_FILE_PATH = path.join(process.cwd(), "xp_database.json");
+const WARN_DB_PATH = path.join(process.cwd(), "warnings_database.json");
 const xpDatabase = new Map();
+const warningsDatabase = new Map();
 
 function loadXPDatabase() {
   try {
@@ -156,8 +158,67 @@ function saveXPDatabase() {
   }
 }
 
-// טעינת הדאטה בייס מיד עם הפעלת הקובץ
+// ─── Warnings Database System ─────────────────────────────────────────────────
+function loadWarningsDatabase() {
+  try {
+    if (fs.existsSync(WARN_DB_PATH)) {
+      const data = fs.readFileSync(WARN_DB_PATH, "utf8");
+      const parsed = JSON.parse(data);
+      for (const [userId, warnings] of Object.entries(parsed)) {
+        warningsDatabase.set(userId, warnings);
+      }
+      console.log(`[⚠️ Warnings] Loaded warnings data for ${warningsDatabase.size} users.`);
+    } else {
+      console.log("[⚠️ Warnings] No warnings database found. Creating new one.");
+    }
+  } catch (err) {
+    console.error("[⚠️ Warnings Load Error]", err.message);
+  }
+}
+
+function saveWarningsDatabase() {
+  try {
+    const obj = Object.fromEntries(warningsDatabase);
+    fs.writeFileSync(WARN_DB_PATH, JSON.stringify(obj, null, 2), "utf8");
+  } catch (err) {
+    console.error("[⚠️ Warnings Save Error]", err.message);
+  }
+}
+
+function getUserWarnings(userId) {
+  if (!warningsDatabase.has(userId)) {
+    warningsDatabase.set(userId, []);
+  }
+  return warningsDatabase.get(userId);
+}
+
+function addWarning(userId, warning) {
+  const warnings = getUserWarnings(userId);
+  warnings.push(warning);
+  warningsDatabase.set(userId, warnings);
+  saveWarningsDatabase();
+}
+
+function removeWarning(userId, warnId) {
+  const warnings = getUserWarnings(userId);
+  const index = warnings.findIndex(w => w.id === warnId);
+  if (index !== -1) {
+    warnings.splice(index, 1);
+    warningsDatabase.set(userId, warnings);
+    saveWarningsDatabase();
+    return true;
+  }
+  return false;
+}
+
+function clearWarnings(userId) {
+  warningsDatabase.set(userId, []);
+  saveWarningsDatabase();
+}
+
+// טעינת הדאטה בייסים מיד עם הפעלת הקובץ
 loadXPDatabase();
+loadWarningsDatabase();
 
 const client = new Client({
   intents: [
@@ -183,12 +244,12 @@ function getUserXP(userId) {
 function addComponentsXP(userId, amount) {
   const currentXp = getUserXP(userId);
   xpDatabase.set(userId, Math.max(0, currentXp + amount));
-  saveXPDatabase(); // שמירה אוטומטית לקובץ בכל פעם שה-XP משתנה
+  saveXPDatabase();
 }
 
 function resetUserXP(userId) {
   xpDatabase.set(userId, 0);
-  saveXPDatabase(); // שמירה אוטומטית לקובץ
+  saveXPDatabase();
 }
 
 async function shouldBypass(guild, executorId) {
@@ -346,6 +407,209 @@ client.on("messageCreate", async (message) => {
     } catch (err) { console.error("[NL The Goat Command Error]", err.message); }
     return;
   }
+
+  // ─── WARN SYSTEM COMMANDS ─────────────────────────────────────────────────
+  
+  if (message.content.startsWith("!warn")) {
+    try {
+      const member = message.member;
+      const hasPermission = member.roles.cache.has(STAFF_ROLE_ID) || 
+                           member.roles.cache.has(HIGH_STAFF_ROLE_ID) || 
+                           member.permissions.has(PermissionFlagsBits.Administrator) ||
+                           message.author.id === message.guild.ownerId;
+
+      if (!hasPermission) {
+        return await message.reply("❌ אין לך הרשאה להשתמש בפקודה זו! רק צוות השרת מורשה.");
+      }
+
+      const args = message.content.split(" ");
+      if (args.length < 3) {
+        return await message.reply("❌ שימוש שגוי! מבנה נכון: `!warn @שם_משתמש סיבת האזהרה`");
+      }
+
+      const target = message.mentions.members.first();
+      if (!target) {
+        return await message.reply("❌ לא צוין משתמש תקין! השתמש ב-@mention.");
+      }
+
+      if (target.id === message.author.id) {
+        return await message.reply("❌ לא ניתן לתת לעצמך אזהרה!");
+      }
+
+      if (target.roles.highest.position >= member.roles.highest.position && message.author.id !== message.guild.ownerId) {
+        return await message.reply("❌ אינך יכול לתת אזהרה למשתמש עם רול גבוה משלך!");
+      }
+
+      const reason = args.slice(2).join(" ");
+      const warnId = Math.random().toString(36).substring(2, 8).toUpperCase();
+      
+      const warning = {
+        id: warnId,
+        reason: reason,
+        moderator: message.author.id,
+        moderatorTag: message.author.tag,
+        timestamp: Date.now()
+      };
+
+      addWarning(target.id, warning);
+
+      // בדיקה אם להחיל עונש אוטומטי (3 אזהרות = קיק, 5 = באן)
+      const userWarns = getUserWarnings(target.id);
+      let punishmentAction = null;
+      
+      if (userWarns.length >= 5) {
+        punishmentAction = "ban";
+        await target.ban({ reason: `הגיע ל-${userWarns.length} אזהרות: ${reason}` }).catch(() => null);
+      } else if (userWarns.length >= 3) {
+        punishmentAction = "kick";
+        await target.kick(`הגיע ל-${userWarns.length} אזהרות: ${reason}`).catch(() => null);
+      }
+
+      const warnEmbed = new EmbedBuilder()
+        .setTitle("⚠️ משתמש קיבל אזהרה")
+        .setColor("#ff9500")
+        .addFields(
+          { name: "👤 משתמש:", value: `${target} (${target.user.tag})`, inline: true },
+          { name: "🛡️ נתן האזהרה:", value: `${message.author}`, inline: true },
+          { name: "📋 סיבה:", value: reason, inline: false },
+          { name: "🔢 מספר אזהרות:", value: `${userWarns.length}/5`, inline: true },
+          { name: "🆔 מזהה אזהרה:", value: `\`${warnId}\``, inline: true }
+        )
+        .setTimestamp();
+
+      if (punishmentAction === "kick") {
+        warnEmbed.addFields({ name: "🚨 פעולה אוטומטית:", value: "המשתמש קיבל קיק בגלל 3 אזהרות!", inline: false });
+        warnEmbed.setColor("#e74c3c");
+      } else if (punishmentAction === "ban") {
+        warnEmbed.addFields({ name: "🚨 פעולה אוטומטית:", value: "המשתמש קיבל באן בגלל 5 אזהרות!", inline: false });
+        warnEmbed.setColor("#c0392b");
+      }
+
+      await message.channel.send({ embeds: [warnEmbed] });
+
+      // שליחת הודעה פרטית למשתמש
+      try {
+        const dmEmbed = new EmbedBuilder()
+          .setTitle(`⚠️ קיבלת אזהרה בשרת ${message.guild.name}`)
+          .setDescription(`**סיבה:** ${reason}\n**מספר אזהרות נוכחי:** ${userWarns.length}/5`)
+          .setColor("#ff9500")
+          .setFooter({ text: "שים לב: 3 אזהרות = קיק, 5 אזהרות = באן" });
+        
+        await target.send({ embeds: [dmEmbed] });
+      } catch (e) {
+        // לא הצליח לשלוח הודעה פרטית
+      }
+
+      // לוג לחדר הסטאפ
+      const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
+      if (logChannel) {
+        await logChannel.send({ embeds: [warnEmbed] });
+      }
+
+    } catch (err) { 
+      console.error("[Warn Command Error]", err.message);
+      await message.reply("❌ אירעה שגיאה בהוספת האזהרה.");
+    }
+    return;
+  }
+
+  if (message.content.startsWith("!warns")) {
+    try {
+      const target = message.mentions.members.first() || message.member;
+      const warnings = getUserWarnings(target.id);
+
+      if (warnings.length === 0) {
+        return await message.reply(`✅ ל${target.user.tag} אין אזהרות נוכחיות!`);
+      }
+
+      const warnsList = warnings.map((w, index) => 
+        `**${index + 1}.** \`${w.id}\` - ${w.reason}\n🕐 ${new Date(w.timestamp).toLocaleDateString('he-IL')} | 👤 <@${w.moderator}>`
+      ).join("\n\n");
+
+      const warnsEmbed = new EmbedBuilder()
+        .setTitle(`⚠️ רשימת אזהרות - ${target.user.tag}`)
+        .setDescription(warnsList)
+        .setColor("#ff9500")
+        .setFooter({ text: `סה"כ: ${warnings.length} אזהרות` })
+        .setTimestamp();
+
+      await message.channel.send({ embeds: [warnsEmbed] });
+
+    } catch (err) { 
+      console.error("[Warns Command Error]", err.message);
+    }
+    return;
+  }
+
+  if (message.content.startsWith("!clearwarns")) {
+    try {
+      const member = message.member;
+      const hasPermission = member.permissions.has(PermissionFlagsBits.Administrator) ||
+                           message.author.id === message.guild.ownerId ||
+                           member.roles.cache.has(HIGH_STAFF_ROLE_ID);
+
+      if (!hasPermission) {
+        return await message.reply("❌ רק High Staff או Administrator מורשים למחוק אזהרות!");
+      }
+
+      const target = message.mentions.members.first();
+      if (!target) {
+        return await message.reply("❌ ציין משתמש: `!clearwarns @שם_משתמש`");
+      }
+
+      clearWarnings(target.id);
+      await message.reply(`✅ כל האזהרות של ${target.user.tag} נמחקו בהצלחה!`);
+
+      const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
+      if (logChannel) {
+        const clearEmbed = new EmbedBuilder()
+          .setTitle("🗑️ מחיקת אזהרות")
+          .setDescription(`${message.author} מחק את כל האזהרות של ${target}`)
+          .setColor("#3498db")
+          .setTimestamp();
+        await logChannel.send({ embeds: [clearEmbed] });
+      }
+
+    } catch (err) { 
+      console.error("[Clearwarns Command Error]", err.message);
+    }
+    return;
+  }
+
+  if (message.content.startsWith("!removewarn")) {
+    try {
+      const member = message.member;
+      const hasPermission = member.permissions.has(PermissionFlagsBits.Administrator) ||
+                           message.author.id === message.guild.ownerId ||
+                           member.roles.cache.has(HIGH_STAFF_ROLE_ID);
+
+      if (!hasPermission) {
+        return await message.reply("❌ רק High Staff או Administrator מורשים להסיר אזהרות!");
+      }
+
+      const args = message.content.split(" ");
+      const target = message.mentions.members.first();
+      const warnId = args[2];
+
+      if (!target || !warnId) {
+        return await message.reply("❌ שימוש: `!removewarn @שם_משתמש מזהה_אזהרה`");
+      }
+
+      const success = removeWarning(target.id, warnId);
+      
+      if (success) {
+        await message.reply(`✅ האזהרה \`${warnId}\` הוסרה בהצלחה מהמשתמש ${target.user.tag}.`);
+      } else {
+        await message.reply(`❌ לא נמצאה אזהרה עם מזהה \`${warnId}\` למשתמש זה.`);
+      }
+
+    } catch (err) { 
+      console.error("[Removewarn Command Error]", err.message);
+    }
+    return;
+  }
+
+  // ─── END WARN SYSTEM ──────────────────────────────────────────────────────
 
   if (message.content === "verify.panel") {
     try {
