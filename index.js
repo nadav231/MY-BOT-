@@ -107,6 +107,7 @@ const TICKET_CATEGORY_ID = "1496911473392222231";
 const PRIVATE_VOICE_CATEGORY_ID = "1523734971703886004"; 
 const XP_CHECK_CHANNEL_ID = "1516794753839009832"; 
 const STAFF_LOGS_CHANNEL_ID = "1496911473203613698"; 
+const GETROLE_CHANNEL_ID = "1519700144520433807"; 
 
 const SHOP_ROLES = {
   mythic: { id: "1521150272443777214", price: 30000, name: "Mythic", emoji: "💠" },
@@ -453,7 +454,6 @@ client.on("messageCreate", async (message) => {
 
       addWarning(target.id, warning);
 
-      // בדיקה אם להחיל עונש אוטומטי (3 אזהרות = קיק, 5 = באן)
       const userWarns = getUserWarnings(target.id);
       let punishmentAction = null;
       
@@ -487,7 +487,6 @@ client.on("messageCreate", async (message) => {
 
       await message.channel.send({ embeds: [warnEmbed] });
 
-      // שליחת הודעה פרטית למשתמש
       try {
         const dmEmbed = new EmbedBuilder()
           .setTitle(`⚠️ קיבלת אזהרה בשרת ${message.guild.name}`)
@@ -500,7 +499,6 @@ client.on("messageCreate", async (message) => {
         // לא הצליח לשלוח הודעה פרטית
       }
 
-      // לוג לחדר הסטאפ
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
       if (logChannel) {
         await logChannel.send({ embeds: [warnEmbed] });
@@ -878,6 +876,66 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  // ─── GET ROLE COMMAND ─────────────────────────────────────────────────────
+  
+  if (message.content === "!getrole") {
+    try {
+      if (message.channel.id !== GETROLE_CHANNEL_ID) {
+        return await message.reply("❌ פקודה זו ניתנת לשימוש רק בחדר הייעודי לכך!");
+      }
+
+      const rolesData = {
+        events: { id: "1496911471907569774", name: "⭐ Events Updates", emoji: "⭐" },
+        daily: { id: "1496911471907569773", name: "❓ Daily Question", emoji: "❓" },
+        giveaways: { id: "1496911471878078694", name: "🎉 Giveaways", emoji: "🎉" }
+      };
+
+      const member = message.member;
+      let currentRoleKey = null;
+
+      for (const [key, role] of Object.entries(rolesData)) {
+        if (member.roles.cache.has(role.id)) {
+          currentRoleKey = key;
+          break;
+        }
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle("🎭 בחירת תפקידים")
+        .setDescription(
+          currentRoleKey 
+            ? `✅ כרגע נבחר: **${rolesData[currentRoleKey].emoji} ${rolesData[currentRoleKey].name}**\n\nבחר תפקיד חדש מהכפתורים למטה אם תרצה לשנות את בחירתך.`
+            : "📋 בחר תפקיד **אחד** מהכפתורים למטה:\n\n⚠️ **שים לב:** ניתן לבחור רול **אחד בלבד**. בחירה ברול אחר תסיר את הקודם."
+        )
+        .setColor("#5865F2")
+        .setFooter({ text: "ניתן לשנות את בחירתך בכל עת", iconURL: client.user.displayAvatarURL() })
+        .setTimestamp();
+
+      const eventsButton = new ButtonBuilder()
+        .setCustomId("getrole_events")
+        .setLabel(`⭐ Events Updates`)
+        .setStyle(currentRoleKey === "events" ? ButtonStyle.Success : ButtonStyle.Primary);
+
+      const dailyButton = new ButtonBuilder()
+        .setCustomId("getrole_daily")
+        .setLabel(`❓ Daily Question`)
+        .setStyle(currentRoleKey === "daily" ? ButtonStyle.Success : ButtonStyle.Primary);
+
+      const giveawaysButton = new ButtonBuilder()
+        .setCustomId("getrole_giveaways")
+        .setLabel(`🎉 Giveaways`)
+        .setStyle(currentRoleKey === "giveaways" ? ButtonStyle.Success : ButtonStyle.Primary);
+
+      const row = new ActionRowBuilder().addComponents(eventsButton, dailyButton, giveawaysButton);
+
+      await message.channel.send({ embeds: [embed], components: [row] });
+
+    } catch (err) {
+      console.error("[Get Role Command Error]", err.message);
+    }
+    return;
+  }
+
   if (message.content.startsWith("!h")) {
     try {
       const args = message.content.slice(2).trim();
@@ -914,6 +972,73 @@ client.on("messageCreate", async (message) => {
 
 client.on("interactionCreate", async (interaction) => {
   
+  // ─── GET ROLE BUTTON HANDLERS ─────────────────────────────────────────────
+  
+  if (interaction.isButton() && interaction.customId.startsWith("getrole_")) {
+    try {
+      const roleKey = interaction.customId.replace("getrole_", "");
+      const rolesData = {
+        events: { id: "1496911471907569774", name: "⭐ Events Updates", emoji: "⭐" },
+        daily: { id: "1496911471907569773", name: "❓ Daily Question", emoji: "❓" },
+        giveaways: { id: "1496911471878078694", name: "🎉 Giveaways", emoji: "🎉" }
+      };
+
+      const roleData = rolesData[roleKey];
+      if (!roleData) return;
+
+      const member = interaction.member;
+
+      if (member.roles.cache.has(roleData.id)) {
+        await interaction.reply({
+          content: `ℹ️ כבר יש לך את התפקיד **${roleData.emoji} ${roleData.name}**!`,
+          ephemeral: true
+        });
+        return;
+      }
+
+      for (const [key, role] of Object.entries(rolesData)) {
+        if (key !== roleKey && member.roles.cache.has(role.id)) {
+          await member.roles.remove(role.id);
+        }
+      }
+
+      await member.roles.add(roleData.id);
+
+      await interaction.reply({
+        content: `✅ נוספת בהצלחה לתפקיד **${roleData.emoji} ${roleData.name}**!`,
+        ephemeral: true
+      });
+
+      const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+        .setDescription(`✅ כרגע נבחר: **${roleData.emoji} ${roleData.name}**\n\nבחר תפקיד חדש מהכפתורים למטה אם תרצה לשנות את בחירתך.`)
+        .setColor("#2ecc71");
+
+      const eventsButton = new ButtonBuilder()
+        .setCustomId("getrole_events")
+        .setLabel(`⭐ Events Updates`)
+        .setStyle(roleKey === "events" ? ButtonStyle.Success : ButtonStyle.Primary);
+
+      const dailyButton = new ButtonBuilder()
+        .setCustomId("getrole_daily")
+        .setLabel(`❓ Daily Question`)
+        .setStyle(roleKey === "daily" ? ButtonStyle.Success : ButtonStyle.Primary);
+
+      const giveawaysButton = new ButtonBuilder()
+        .setCustomId("getrole_giveaways")
+        .setLabel(`🎉 Giveaways`)
+        .setStyle(roleKey === "giveaways" ? ButtonStyle.Success : ButtonStyle.Primary);
+
+      const row = new ActionRowBuilder().addComponents(eventsButton, dailyButton, giveawaysButton);
+
+      await interaction.message.edit({ embeds: [updatedEmbed], components: [row] });
+
+    } catch (err) {
+      console.error("[Get Role Button Error]", err.message);
+      await interaction.reply({ content: "❌ אירעה שגיאה. נסה שוב.", ephemeral: true });
+    }
+    return;
+  }
+
   if (interaction.isButton() && interaction.customId === "xp_drop_claim") {
     try {
       const dropData = activeDrops.get(interaction.message.id);
@@ -990,7 +1115,7 @@ client.on("interactionCreate", async (interaction) => {
         const buyLog = new EmbedBuilder()
           .setTitle("🛍️ רכישת רול בחנות")
           .setColor("#9b59b6")
-          .setDescription(`${interaction.user} רכש את הרול <@&${roleData.id}> תמורת ${roleData.price.toLocaleString()} XP.`)
+          .setDescription(`${interaction.user} �רכש את הרול <@&${roleData.id}> תמורת ${roleData.price.toLocaleString()} XP.`)
           .setTimestamp();
         await logChannel.send({ embeds: [buyLog] });
       }
