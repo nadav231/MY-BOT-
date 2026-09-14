@@ -904,8 +904,8 @@ client.on("messageCreate", async (message) => {
         .setTitle("🎭 בחירת תפקידים")
         .setDescription(
           currentRoleKey 
-            ? `✅ כרגע נבחר: **${rolesData[currentRoleKey].emoji} ${rolesData[currentRoleKey].name}**\n\nבחר תפקיד חדש מהכפתורים למטה אם תרצה לשנות את בחירתך.`
-            : "📋 בחר תפקיד **אחד** מהכפתורים למטה:\n\n⚠️ **שים לב:** ניתן לבחור רול **אחד בלבד**. בחירה ברול אחר תסיר את הקודם."
+            ? `✅ כרגע נבחר: **${rolesData[currentRoleKey].emoji} ${rolesData[currentRoleKey].name}**\n\nבחר תפקיד חדש או לחץ שוב על אותו תפקיד כדי להסיר אותו.`
+            : "📋 בחר תפקיד **אחד** מהכפתורים למטה:\n\n⚠️ **שים לב:** ניתן לבחור רול **אחד בלבד**. בחירה ברול אחר תסיר את הקודם.\n🔄 לחיצה חוזרת על אותו רול תסיר אותו."
         )
         .setColor("#5865F2")
         .setFooter({ text: "ניתן לשנות את בחירתך בכל עת", iconURL: client.user.displayAvatarURL() })
@@ -987,21 +987,53 @@ client.on("interactionCreate", async (interaction) => {
       if (!roleData) return;
 
       const member = interaction.member;
+      const hasRole = member.roles.cache.has(roleData.id);
 
-      if (member.roles.cache.has(roleData.id)) {
+      // ─── אם כבר יש את הרול - הסר אותו (TOGGLE) ───
+      if (hasRole) {
+        await member.roles.remove(roleData.id);
+
         await interaction.reply({
-          content: `ℹ️ כבר יש לך את התפקיד **${roleData.emoji} ${roleData.name}**!`,
+          content: `❌ התפקיד **${roleData.emoji} ${roleData.name}** הוסר ממך.`,
           ephemeral: true
         });
+
+        // עדכון המסר עם כל הכפתורים בצבע רגיל
+        const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+          .setDescription("📋 בחר תפקיד **אחד** מהכפתורים למטה:\n\n⚠️ **שים לב:** ניתן לבחור רול **אחד בלבד**. בחירה ברול אחר תסיר את הקודם.\n🔄 לחיצה חוזרת על אותו רול תסיר אותו.")
+          .setColor("#5865F2");
+
+        const eventsButton = new ButtonBuilder()
+          .setCustomId("getrole_events")
+          .setLabel(`⭐ Events Updates`)
+          .setStyle(ButtonStyle.Primary);
+
+        const dailyButton = new ButtonBuilder()
+          .setCustomId("getrole_daily")
+          .setLabel(`❓ Daily Question`)
+          .setStyle(ButtonStyle.Primary);
+
+        const giveawaysButton = new ButtonBuilder()
+          .setCustomId("getrole_giveaways")
+          .setLabel(`🎉 Giveaways`)
+          .setStyle(ButtonStyle.Primary);
+
+        const row = new ActionRowBuilder().addComponents(eventsButton, dailyButton, giveawaysButton);
+
+        await interaction.message.edit({ embeds: [updatedEmbed], components: [row] });
         return;
       }
 
+      // ─── אם אין את הרול - הסר רולים אחרים והוסף את הנבחר ───
+      
+      // הסרת כל שאר הרולים מהרשימה
       for (const [key, role] of Object.entries(rolesData)) {
         if (key !== roleKey && member.roles.cache.has(role.id)) {
           await member.roles.remove(role.id);
         }
       }
 
+      // הוספת הרול החדש
       await member.roles.add(roleData.id);
 
       await interaction.reply({
@@ -1009,8 +1041,9 @@ client.on("interactionCreate", async (interaction) => {
         ephemeral: true
       });
 
+      // עדכון המסר עם הכפתור הנבחר בירוק
       const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-        .setDescription(`✅ כרגע נבחר: **${roleData.emoji} ${roleData.name}**\n\nבחר תפקיד חדש מהכפתורים למטה אם תרצה לשנות את בחירתך.`)
+        .setDescription(`✅ כרגע נבחר: **${roleData.emoji} ${roleData.name}**\n\nבחר תפקיד חדש או לחץ שוב על אותו תפקיד כדי להסיר אותו.`)
         .setColor("#2ecc71");
 
       const eventsButton = new ButtonBuilder()
@@ -1115,7 +1148,7 @@ client.on("interactionCreate", async (interaction) => {
         const buyLog = new EmbedBuilder()
           .setTitle("🛍️ רכישת רול בחנות")
           .setColor("#9b59b6")
-          .setDescription(`${interaction.user} �רכש את הרול <@&${roleData.id}> תמורת ${roleData.price.toLocaleString()} XP.`)
+          .setDescription(`${interaction.user} רכש את הרול <@&${roleData.id}> תמורת ${roleData.price.toLocaleString()} XP.`)
           .setTimestamp();
         await logChannel.send({ embeds: [buyLog] });
       }
