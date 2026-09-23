@@ -16,6 +16,7 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  SlashCommandBuilder,
 } from "discord.js";
 
 // ─── Express Server ──────────────────────────────────────────────────────────
@@ -107,7 +108,154 @@ const TICKET_CATEGORY_ID = "1496911473392222231";
 const PRIVATE_VOICE_CATEGORY_ID = "1523734971703886004"; 
 const XP_CHECK_CHANNEL_ID = "1516794753839009832"; 
 const STAFF_LOGS_CHANNEL_ID = "1496911473203613698"; 
-const GETROLE_CHANNEL_ID = "1519700144520433807"; 
+const GETROLE_CHANNEL_ID = "1519700144520433807";
+
+// ─── Live Stream Lock System ─────────────────────────────────────────────────
+const LIVE_STREAM_CHANNEL_ID = "1534690415385509888";
+const LIVE_STREAM_COMMAND_CHANNEL_ID = "1523678979930853386";
+const LIVE_STREAM_CONTROLLER_ID = "1050443951036969070";
+
+// המשתמשים שמורשים להיכנס ל-Live Stream גם כשהחדר נעול.
+// אין שינוי להרשאות הערוץ עצמו — הבוט רק מעביר מי שלא מורשה.
+const liveStreamAllowedUsers = new Set([LIVE_STREAM_CONTROLLER_ID]);
+let liveStreamLocked = false;
+let liveStreamOriginalPermissions = null;
+let liveStreamPermissionRestoreRunning = false;
+
+function getLiveStreamChannel(guild) {
+  return guild?.channels?.cache?.get(LIVE_STREAM_CHANNEL_ID) ?? null;
+}
+
+function getLiveStreamCommandAllowed(member) {
+  return member?.id === LIVE_STREAM_CONTROLLER_ID;
+}
+
+function getAvailableVoiceChannel(member) {
+  if (!member?.guild) return null;
+
+  const candidates = member.guild.channels.cache
+    .filter(channel =>
+      channel.type === ChannelType.GuildVoice &&
+      channel.id !== LIVE_STREAM_CHANNEL_ID
+    )
+    .filter(channel => {
+      const limit = channel.userLimit ?? 0;
+      const notFull = limit === 0 || channel.members.size < limit;
+      const permissions = channel.permissionsFor(member);
+      return notFull && permissions?.has(PermissionFlagsBits.ViewChannel) && permissions?.has(PermissionFlagsBits.Connect);
+    })
+    .sort((a, b) => a.members.size - b.members.size);
+
+  return candidates.first() ?? null;
+}
+
+function saveLiveStreamOriginalPermissions(channel) {
+  if (!channel?.permissionOverwrites) return;
+  liveStreamOriginalPermissions = channel.permissionOverwrites.cache.map(overwrite => ({
+    id: overwrite.id,
+    type: overwrite.type,
+    allow: overwrite.allow.bitfield.toString(),
+    deny: overwrite.deny.bitfield.toString(),
+  }));
+}
+
+async function restoreLiveStreamPermissions(channel) {
+  if (!channel || !liveStreamOriginalPermissions || liveStreamPermissionRestoreRunning) return;
+  liveStreamPermissionRestoreRunning = true;
+
+  try {
+    const current = channel.permissionOverwrites.cache.map(overwrite => ({
+      id: overwrite.id,
+      type: overwrite.type,
+      allow: overwrite.allow.bitfield.toString(),
+      deny: overwrite.deny.bitfield.toString(),
+    }));
+
+    const same = JSON.stringify(current.sort((a, b) => a.id.localeCompare(b.id))) ===
+      JSON.stringify(liveStreamOriginalPermissions.slice().sort((a, b) => a.id.localeCompare(b.id)));
+
+    if (!same) {
+      await channel.permissionOverwrites.set(
+        liveStreamOriginalPermissions.map(overwrite => ({
+          id: overwrite.id,
+          type: overwrite.type,
+          allow: BigInt(overwrite.allow),
+          deny: BigInt(overwrite.deny),
+        })),
+        "Live Stream protection: restoring original permissions"
+      );
+      console.log("[Live Stream] Permissions restored automatically.");
+    }
+  } catch (err) {
+    console.error("[Live Stream Permission Restore Error]", err.message);
+  } finally {
+    liveStreamPermissionRestoreRunning = false;
+  }
+}
+
+async function handleLiveStreamJoin(oldState, newState) {
+  if (!newState.guild || !newState.channelId) return;
+  if (newState.channelId !== LIVE_STREAM_CHANNEL_ID) return;
+  if (!liveStreamLocked) return;
+
+  const member = newState.member;
+  if (!member || member.user.bot) return;
+
+  // המשתמש המוגדר והמשתמשים שאושרו דרך /liveallow יכולים להיכנס.
+  if (liveStreamAllowedUsers.has(member.id)) return;
+
+  const fallbackChannel = getAvailableVoiceChannel(member);
+
+  try {
+    if (fallbackChannel) {
+      await member.voice.setChannel(
+        fallbackChannel,
+        "Live Stream is locked — user is not on the allowed list"
+      );
+      console.log(`[Live Stream] Moved ${member.user.tag} to ${fallbackChannel.name}.`);
+    } else {
+      await member.voice.disconnect(
+        "Live Stream is locked and no available voice channel was found"
+      );
+      console.log(`[Live Stream] Disconnected ${member.user.tag}; no free voice channel.`);
+    }
+  } catch (err) {
+    console.error("[Live Stream Move Error]", err.message);
+  }
+}
+
+async function registerLiveStreamCommands(guild) {
+  const commands = [
+    new SlashCommandBuilder()
+      .setName("lock")
+      .setDescription("נועל את חדר ה-Live Stream ומעביר מי שלא מורשה")
+      .setDMPermission(false),
+
+    new SlashCommandBuilder()
+      .setName("unlock")
+      .setDescription("פותח את חדר ה-Live Stream ומאפשר כניסה")
+      .setDMPermission(false),
+
+    new SlashCommandBuilder()
+      .setName("liveallow")
+      .setDescription("מאפשר למשתמש מסוים להיכנס ל-Live Stream כשהוא נעול")
+      .addUserOption(option =>
+        option
+          .setName("user")
+          .setDescription("המשתמש שמותר לו להיכנס")
+          .setRequired(true)
+      )
+      .setDMPermission(false),
+  ];
+
+  try {
+    await guild.commands.set(commands);
+    console.log("[Live Stream] Slash commands registered.");
+  } catch (err) {
+    console.error("[Live Stream Slash Commands Error]", err.message);
+  }
+}
+
 
 const SHOP_ROLES = {
   mythic: { id: "1521150272443777214", price: 30000, name: "Mythic", emoji: "💠" },
@@ -350,6 +498,21 @@ setInterval(() => {
 client.once("ready", async () => {
   console.log(`[Bot] Online as ${client.user.tag}`);
   client.user.setStatus("dnd");
+
+  const guild = client.guilds.cache.first();
+  if (guild) {
+    const liveChannel = getLiveStreamChannel(guild);
+    if (liveChannel) {
+      saveLiveStreamOriginalPermissions(liveChannel);
+      await restoreLiveStreamPermissions(liveChannel);
+      await registerLiveStreamCommands(guild);
+      console.log(`[Live Stream] Protected channel: ${liveChannel.name} (${LIVE_STREAM_CHANNEL_ID})`);
+    } else {
+      console.warn(`[Live Stream] Channel ${LIVE_STREAM_CHANNEL_ID} was not found.`);
+      await registerLiveStreamCommands(guild);
+    }
+  }
+
   await syncAllMembers();
 });
 
@@ -968,10 +1131,111 @@ client.on("messageCreate", async (message) => {
   }
 });
 
+// ─── Live Stream Protection Events ────────────────────────────────────────────
+
+client.on("voiceStateUpdate", async (oldState, newState) => {
+  await handleLiveStreamJoin(oldState, newState);
+});
+
+client.on("channelUpdate", async (oldChannel, newChannel) => {
+  if (!newChannel.guild || newChannel.id !== LIVE_STREAM_CHANNEL_ID) return;
+  if (liveStreamPermissionRestoreRunning) return;
+
+  // אם מישהו שינה הרשאות בחדר — הבוט מחזיר את ההרשאות המקוריות.
+  await restoreLiveStreamPermissions(newChannel);
+});
+
 // ─── Interactions (Buttons, Menus, Modals) ───────────────────────────────────
 
 client.on("interactionCreate", async (interaction) => {
   
+  // ─── LIVE STREAM SLASH COMMANDS ──────────────────────────────────────────
+  if (interaction.isChatInputCommand() &&
+      ["lock", "unlock", "liveallow"].includes(interaction.commandName)) {
+    try {
+      if (!interaction.guild) {
+        return await interaction.reply({ content: "❌ הפקודה זמינה רק בשרת.", ephemeral: true });
+      }
+
+      if (interaction.channelId !== LIVE_STREAM_COMMAND_CHANNEL_ID) {
+        return await interaction.reply({
+          content: `❌ את הפקודה הזו אפשר להפעיל רק בחדר <#${LIVE_STREAM_COMMAND_CHANNEL_ID}>.`,
+          ephemeral: true
+        });
+      }
+
+      if (interaction.user.id !== LIVE_STREAM_CONTROLLER_ID) {
+        return await interaction.reply({
+          content: "❌ אין לך הרשאה להשתמש במערכת ה-Live Stream.",
+          ephemeral: true
+        });
+      }
+
+      const liveChannel = getLiveStreamChannel(interaction.guild);
+      if (!liveChannel || liveChannel.type !== ChannelType.GuildVoice) {
+        return await interaction.reply({
+          content: "❌ חדר ה-Live Stream לא נמצא או שהוא לא חדר קולי.",
+          ephemeral: true
+        });
+      }
+
+      if (interaction.commandName === "lock") {
+        liveStreamLocked = true;
+
+        // לא משנים Permission Overwrites — כך הבוט לא נועל את החדר דרך הרשאות.
+        // כל מי שלא מורשה פשוט יועבר ברגע שהוא ינסה להיכנס.
+        await interaction.reply({
+          content:
+            `🔒 **ה-Live Stream ננעל.**\n` +
+            `מי שלא נמצא ברשימת המורשים יועבר אוטומטית לחדר קולי פנוי.\n` +
+            `👤 אתה תמיד מורשה להיכנס.`
+        });
+        return;
+      }
+
+      if (interaction.commandName === "unlock") {
+        liveStreamLocked = false;
+
+        // מחזיר את ההרשאות המקוריות ליתר ביטחון, בלי להשאיר שינוי שנעשה בטעות.
+        await restoreLiveStreamPermissions(liveChannel);
+
+        await interaction.reply({
+          content: "🔓 **ה-Live Stream נפתח.** עכשיו כל מי שיש לו הרשאת כניסה רגילה יכול להיכנס."
+        });
+        return;
+      }
+
+      if (interaction.commandName === "liveallow") {
+        const target = interaction.options.getMember("user");
+        if (!target) {
+          return await interaction.reply({
+            content: "❌ לא הצלחתי למצוא את המשתמש שבחרת.",
+            ephemeral: true
+          });
+        }
+
+        liveStreamAllowedUsers.add(target.id);
+
+        await interaction.reply({
+          content:
+            `✅ ${target} נוסף לרשימת המורשים.\n` +
+            `הוא יכול להיכנס ל-<#${LIVE_STREAM_CHANNEL_ID}> גם כשהחדר נעול.`
+        });
+        return;
+      }
+    } catch (err) {
+      console.error("[Live Stream Command Error]", err.message);
+
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: "❌ אירעה שגיאה במערכת ה-Live Stream.",
+          ephemeral: true
+        }).catch(() => null);
+      }
+    }
+    return;
+  }
+
   // ─── GET ROLE BUTTON HANDLERS ─────────────────────────────────────────────
   
   if (interaction.isButton() && interaction.customId.startsWith("getrole_")) {
