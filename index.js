@@ -151,7 +151,6 @@ function getAvailableVoiceChannel(member) {
 
 function saveLiveStreamOriginalPermissions(channel) {
   if (!channel?.permissionOverwrites) return;
-
   liveStreamOriginalPermissions = channel.permissionOverwrites.cache.map(overwrite => ({
     id: overwrite.id,
     type: overwrite.type,
@@ -185,7 +184,6 @@ async function restoreLiveStreamPermissions(channel) {
         })),
         "Live Stream protection: restoring original permissions"
       );
-
       console.log("[Live Stream] Permissions restored automatically.");
     }
   } catch (err) {
@@ -214,13 +212,11 @@ async function handleLiveStreamJoin(oldState, newState) {
         fallbackChannel,
         "Live Stream is locked — user is not on the allowed list"
       );
-
       console.log(`[Live Stream] Moved ${member.user.tag} to ${fallbackChannel.name}.`);
     } else {
       await member.voice.disconnect(
         "Live Stream is locked and no available voice channel was found"
       );
-
       console.log(`[Live Stream] Disconnected ${member.user.tag}; no free voice channel.`);
     }
   } catch (err) {
@@ -253,11 +249,11 @@ async function registerLiveStreamCommands(guild) {
 
     new SlashCommandBuilder()
       .setName("liveunallow")
-      .setDescription("מבטל למשתמש הרשאה להיכנס ל-Live Stream כשהוא נעול")
+      .setDescription("מבטל למשתמש מסוים את ההרשאה להיכנס ל-Live Stream כשהוא נעול")
       .addUserOption(option =>
         option
           .setName("user")
-          .setDescription("המשתמש שמבטלים לו את ההרשאה")
+          .setDescription("המשתמש שההרשאה שלו תבוטל")
           .setRequired(true)
       )
       .setDMPermission(false),
@@ -301,11 +297,9 @@ function loadXPDatabase() {
     if (fs.existsSync(DB_FILE_PATH)) {
       const data = fs.readFileSync(DB_FILE_PATH, "utf8");
       const parsed = JSON.parse(data);
-
       for (const [userId, xpValue] of Object.entries(parsed)) {
         xpDatabase.set(userId, xpValue);
       }
-
       console.log(`[💾 Database] Loaded XP data for ${xpDatabase.size} users.`);
     } else {
       console.log("[💾 Database] No database file found. Creating a new one on save.");
@@ -330,11 +324,9 @@ function loadWarningsDatabase() {
     if (fs.existsSync(WARN_DB_PATH)) {
       const data = fs.readFileSync(WARN_DB_PATH, "utf8");
       const parsed = JSON.parse(data);
-
       for (const [userId, warnings] of Object.entries(parsed)) {
         warningsDatabase.set(userId, warnings);
       }
-
       console.log(`[⚠️ Warnings] Loaded warnings data for ${warningsDatabase.size} users.`);
     } else {
       console.log("[⚠️ Warnings] No warnings database found. Creating new one.");
@@ -357,7 +349,6 @@ function getUserWarnings(userId) {
   if (!warningsDatabase.has(userId)) {
     warningsDatabase.set(userId, []);
   }
-
   return warningsDatabase.get(userId);
 }
 
@@ -371,14 +362,12 @@ function addWarning(userId, warning) {
 function removeWarning(userId, warnId) {
   const warnings = getUserWarnings(userId);
   const index = warnings.findIndex(w => w.id === warnId);
-
   if (index !== -1) {
     warnings.splice(index, 1);
     warningsDatabase.set(userId, warnings);
     saveWarningsDatabase();
     return true;
   }
-
   return false;
 }
 
@@ -409,7 +398,6 @@ function getUserXP(userId) {
   if (!xpDatabase.has(userId)) {
     xpDatabase.set(userId, 0);
   }
-
   return xpDatabase.get(userId);
 }
 
@@ -426,22 +414,18 @@ function resetUserXP(userId) {
 
 async function shouldBypass(guild, executorId) {
   if (executorId === guild.ownerId || executorId === client.user.id || executorId === IMMUNE_USER_ID) return true;
-
   const member = await guild.members.fetch(executorId).catch(() => null);
   if (!member) return false;
-
   return member.roles.cache.has(ALLOWED_DELETE_ROLE_ID);
 }
 
 async function punishUser(guild, executorId, reason) {
   try {
     if (executorId === guild.ownerId || executorId === IMMUNE_USER_ID) return;
-
     const member = await guild.members.fetch(executorId).catch(() => null);
     if (!member) return;
 
     const botMember = guild.members.me;
-
     if (member.roles.highest.position >= botMember.roles.highest.position) {
       console.log(`[Anti-Nuke] Cannot punish ${member.user.tag} — Role too high.`);
       return;
@@ -449,7 +433,6 @@ async function punishUser(guild, executorId, reason) {
 
     await member.roles.set([]).catch(() => null);
     await member.ban({ reason: `Anti-Nuke Triggered: ${reason}` });
-
     console.log(`[💥 Anti-Nuke BAN] Banned ${member.user.tag}. Reason: ${reason}`);
   } catch (err) {
     console.error("[Anti-Nuke Punishment] Error:", err.message);
@@ -466,7 +449,7 @@ function isMassActionTriggered(userId, actionType) {
 
   const timestamps = userActionLog.get(key);
   const validTimestamps = timestamps.filter(time => now - time < ACTION_RESET_TIME);
-
+  
   validTimestamps.push(now);
   userActionLog.set(key, validTimestamps);
 
@@ -475,22 +458,18 @@ function isMassActionTriggered(userId, actionType) {
 
 async function updateMemberNickname(member) {
   let prefix = null;
-
   for (const roleId of rolePriority) {
     if (member.roles.cache.has(roleId)) {
       prefix = rolePrefixes[roleId];
       break;
     }
   }
-
   if (!prefix) {
     if (member.nickname) await member.setNickname(null).catch(() => null);
     return;
   }
-
   const baseName = member.displayName.replace(/^(MG|AR|SA|AD|IN|SMD|MOD|GR|SH|HR|RS|VIP)\s\|\s/i, "");
   const newNickname = `${prefix} | ${baseName}`;
-
   if (member.nickname !== newNickname) {
     await member.setNickname(newNickname).catch(() => null);
   }
@@ -498,11 +477,8 @@ async function updateMemberNickname(member) {
 
 async function syncAllMembers() {
   const guild = client.guilds.cache.first();
-
   if (!guild) return;
-
   await guild.members.fetch().catch(() => null);
-
   for (const member of guild.members.cache.values()) {
     await updateMemberNickname(member).catch(() => null);
   }
@@ -517,7 +493,6 @@ setInterval(() => {
         if (channel.type === ChannelType.GuildVoice && channel.members.size > 1) {
           channel.members.forEach(member => {
             if (member.user.bot || member.voice.selfMute || member.voice.selfDeaf) return;
-
             const xpPerMinute = 100 / 3;
             addComponentsXP(member.id, xpPerMinute);
           });
@@ -536,15 +511,12 @@ client.once("ready", async () => {
   client.user.setStatus("dnd");
 
   const guild = client.guilds.cache.first();
-
   if (guild) {
     const liveChannel = getLiveStreamChannel(guild);
-
     if (liveChannel) {
       saveLiveStreamOriginalPermissions(liveChannel);
       await restoreLiveStreamPermissions(liveChannel);
       await registerLiveStreamCommands(guild);
-
       console.log(`[Live Stream] Protected channel: ${liveChannel.name} (${LIVE_STREAM_CHANNEL_ID})`);
     } else {
       console.warn(`[Live Stream] Channel ${LIVE_STREAM_CHANNEL_ID} was not found.`);
@@ -565,11 +537,9 @@ client.on("messageDelete", async (message) => {
   if (message.author?.id === client.user.id && message.embeds.length > 0) {
     try {
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
-
       if (logChannel) {
         const recoveredEmbed = EmbedBuilder.from(message.embeds[0]);
         recoveredEmbed.setFooter({ text: "🛡️ הודעה זו שוחזרה אוטומטית לאחר ניסיון מחיקה!" });
-
         await logChannel.send({ embeds: [recoveredEmbed] });
       }
     } catch (err) {
@@ -597,7 +567,6 @@ client.on("messageCreate", async (message) => {
         } else {
           await message.reply("🔑 **[בדיקת חסינות]** הפקודה עובדת! כבר יש לך את הרול במשתמש.");
         }
-
         return; 
       }
 
@@ -609,12 +578,8 @@ client.on("messageCreate", async (message) => {
 
       await member.roles.add(EXCLUSIVE_KEY_ROLE_ID);
       specialCommandUsesLeft--;
-
       await message.reply(`🎉 כל הכבוד! קיבלת את הרול <@&${EXCLUSIVE_KEY_ROLE_ID}> בהצלחה!\n🚪 נותרו עוד **${specialCommandUsesLeft}** פעמים בלבד להשיג את הרול הזה.`);
-    } catch (err) {
-      console.error("[NL The Goat Command Error]", err.message);
-    }
-
+    } catch (err) { console.error("[NL The Goat Command Error]", err.message); }
     return;
   }
 
@@ -623,7 +588,6 @@ client.on("messageCreate", async (message) => {
   if (message.content.startsWith("!warn")) {
     try {
       const member = message.member;
-
       const hasPermission = member.roles.cache.has(STAFF_ROLE_ID) || 
                            member.roles.cache.has(HIGH_STAFF_ROLE_ID) || 
                            member.permissions.has(PermissionFlagsBits.Administrator) ||
@@ -634,13 +598,11 @@ client.on("messageCreate", async (message) => {
       }
 
       const args = message.content.split(" ");
-
       if (args.length < 3) {
         return await message.reply("❌ שימוש שגוי! מבנה נכון: `!warn @שם_משתמש סיבת האזהרה`");
       }
 
       const target = message.mentions.members.first();
-
       if (!target) {
         return await message.reply("❌ לא צוין משתמש תקין! השתמש ב-@mention.");
       }
@@ -655,7 +617,7 @@ client.on("messageCreate", async (message) => {
 
       const reason = args.slice(2).join(" ");
       const warnId = Math.random().toString(36).substring(2, 8).toUpperCase();
-
+      
       const warning = {
         id: warnId,
         reason: reason,
@@ -668,7 +630,7 @@ client.on("messageCreate", async (message) => {
 
       const userWarns = getUserWarnings(target.id);
       let punishmentAction = null;
-
+      
       if (userWarns.length >= 5) {
         punishmentAction = "ban";
         await target.ban({ reason: `הגיע ל-${userWarns.length} אזהרות: ${reason}` }).catch(() => null);
@@ -690,20 +652,10 @@ client.on("messageCreate", async (message) => {
         .setTimestamp();
 
       if (punishmentAction === "kick") {
-        warnEmbed.addFields({
-          name: "🚨 פעולה אוטומטית:",
-          value: "המשתמש קיבל קיק בגלל 3 אזהרות!",
-          inline: false
-        });
-
+        warnEmbed.addFields({ name: "🚨 פעולה אוטומטית:", value: "המשתמש קיבל קיק בגלל 3 אזהרות!", inline: false });
         warnEmbed.setColor("#e74c3c");
       } else if (punishmentAction === "ban") {
-        warnEmbed.addFields({
-          name: "🚨 פעולה אוטומטית:",
-          value: "המשתמש קיבל באן בגלל 5 אזהרות!",
-          inline: false
-        });
-
+        warnEmbed.addFields({ name: "🚨 פעולה אוטומטית:", value: "המשתמש קיבל באן בגלל 5 אזהרות!", inline: false });
         warnEmbed.setColor("#c0392b");
       }
 
@@ -715,14 +667,13 @@ client.on("messageCreate", async (message) => {
           .setDescription(`**סיבה:** ${reason}\n**מספר אזהרות נוכחי:** ${userWarns.length}/5`)
           .setColor("#ff9500")
           .setFooter({ text: "שים לב: 3 אזהרות = קיק, 5 אזהרות = באן" });
-
+        
         await target.send({ embeds: [dmEmbed] });
       } catch (e) {
         // לא הצליח לשלוח הודעה פרטית
       }
 
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
-
       if (logChannel) {
         await logChannel.send({ embeds: [warnEmbed] });
       }
@@ -731,7 +682,6 @@ client.on("messageCreate", async (message) => {
       console.error("[Warn Command Error]", err.message);
       await message.reply("❌ אירעה שגיאה בהוספת האזהרה.");
     }
-
     return;
   }
 
@@ -760,14 +710,12 @@ client.on("messageCreate", async (message) => {
     } catch (err) { 
       console.error("[Warns Command Error]", err.message);
     }
-
     return;
   }
 
   if (message.content.startsWith("!clearwarns")) {
     try {
       const member = message.member;
-
       const hasPermission = member.permissions.has(PermissionFlagsBits.Administrator) ||
                            message.author.id === message.guild.ownerId ||
                            member.roles.cache.has(HIGH_STAFF_ROLE_ID);
@@ -777,38 +725,32 @@ client.on("messageCreate", async (message) => {
       }
 
       const target = message.mentions.members.first();
-
       if (!target) {
         return await message.reply("❌ ציין משתמש: `!clearwarns @שם_משתמש`");
       }
 
       clearWarnings(target.id);
-
       await message.reply(`✅ כל האזהרות של ${target.user.tag} נמחקו בהצלחה!`);
 
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
-
       if (logChannel) {
         const clearEmbed = new EmbedBuilder()
           .setTitle("🗑️ מחיקת אזהרות")
           .setDescription(`${message.author} מחק את כל האזהרות של ${target}`)
           .setColor("#3498db")
           .setTimestamp();
-
         await logChannel.send({ embeds: [clearEmbed] });
       }
 
     } catch (err) { 
       console.error("[Clearwarns Command Error]", err.message);
     }
-
     return;
   }
 
   if (message.content.startsWith("!removewarn")) {
     try {
       const member = message.member;
-
       const hasPermission = member.permissions.has(PermissionFlagsBits.Administrator) ||
                            message.author.id === message.guild.ownerId ||
                            member.roles.cache.has(HIGH_STAFF_ROLE_ID);
@@ -826,7 +768,7 @@ client.on("messageCreate", async (message) => {
       }
 
       const success = removeWarning(target.id, warnId);
-
+      
       if (success) {
         await message.reply(`✅ האזהרה \`${warnId}\` הוסרה בהצלחה מהמשתמש ${target.user.tag}.`);
       } else {
@@ -836,7 +778,6 @@ client.on("messageCreate", async (message) => {
     } catch (err) { 
       console.error("[Removewarn Command Error]", err.message);
     }
-
     return;
   }
 
@@ -845,7 +786,7 @@ client.on("messageCreate", async (message) => {
   if (message.content === "verify.panel") {
     try {
       await message.delete().catch(() => null);
-
+      
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId("verify_button")
@@ -864,25 +805,18 @@ client.on("messageCreate", async (message) => {
         )
         .setColor("#00ff7f")
         .setThumbnail(message.guild.iconURL({ dynamic: true }))
-        .setFooter({
-          text: "מערכת הגנה אוטומטית • אנא שמרו על חוקי השרת",
-          iconURL: client.user.displayAvatarURL()
-        })
+        .setFooter({ text: "מערכת הגנה אוטומטית • אנא שמרו על חוקי השרת", iconURL: client.user.displayAvatarURL() })
         .setTimestamp();
 
       await message.channel.send({ embeds: [embed], components: [row] });
-
-    } catch (err) {
-      console.error(err);
-    }
-
+    } catch (err) { console.error(err); }
     return;
   }
 
   if (message.content === "ticket.panl" || message.content === "ticket.panel") {
     try {
       await message.delete().catch(() => null);
-
+      
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId("ticket_open_init")
@@ -896,11 +830,7 @@ client.on("messageCreate", async (message) => {
         .setColor("#2f3136");
 
       await message.channel.send({ embeds: [embed], components: [row] });
-
-    } catch (err) {
-      console.error("[Ticket Panel Error]", err.message);
-    }
-
+    } catch (err) { console.error("[Ticket Panel Error]", err.message); }
     return;
   }
 
@@ -908,7 +838,6 @@ client.on("messageCreate", async (message) => {
     try {
       const member = message.member;
       const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
-
       if (!hasAdmin && message.author.id !== message.guild.ownerId) {
         return await message.reply("❌ רק מנהלים עם הרשאת Administrator מורשים להציב את פאנל החנות!");
       }
@@ -937,48 +866,17 @@ client.on("messageCreate", async (message) => {
         .setCustomId("shop_role_select")
         .setPlaceholder("🛒 בחר מוצר לקנייה מהחנות...")
         .addOptions(
-          new StringSelectMenuOptionBuilder()
-            .setLabel(`חדר וויס פרטי לעצמך (${PRIVATE_VOICE_PRICE.toLocaleString()} XP)`)
-            .setValue("buy_private_voice")
-            .setEmoji("👑"),
-
-          new StringSelectMenuOptionBuilder()
-            .setLabel(`${SHOP_ROLES.mythic.name} (${SHOP_ROLES.mythic.price.toLocaleString()} XP)`)
-            .setValue("mythic")
-            .setEmoji(SHOP_ROLES.mythic.emoji),
-
-          new StringSelectMenuOptionBuilder()
-            .setLabel(`${SHOP_ROLES.legend.name} (${SHOP_ROLES.legend.price.toLocaleString()} XP)`)
-            .setValue("legend")
-            .setEmoji(SHOP_ROLES.legend.emoji),
-
-          new StringSelectMenuOptionBuilder()
-            .setLabel(`${SHOP_ROLES.elite.name} (${SHOP_ROLES.elite.price.toLocaleString()} XP)`)
-            .setValue("elite")
-            .setEmoji(SHOP_ROLES.elite.emoji),
-
-          new StringSelectMenuOptionBuilder()
-            .setLabel(`${SHOP_ROLES.rookie.name} (${SHOP_ROLES.rookie.price.toLocaleString()} XP)`)
-            .setValue("rookie")
-            .setEmoji(SHOP_ROLES.rookie.emoji),
-
-          new StringSelectMenuOptionBuilder()
-            .setLabel(`${SHOP_ROLES.pro_player.name} (${SHOP_ROLES.pro_player.price.toLocaleString()} XP)`)
-            .setValue("pro_player")
-            .setEmoji(SHOP_ROLES.pro_player.emoji)
+          new StringSelectMenuOptionBuilder().setLabel(`חדר וויס פרטי לעצמך (${PRIVATE_VOICE_PRICE.toLocaleString()} XP)`).setValue("buy_private_voice").setEmoji("👑"),
+          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.mythic.name} (${SHOP_ROLES.mythic.price.toLocaleString()} XP)`).setValue("mythic").setEmoji(SHOP_ROLES.mythic.emoji),
+          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.legend.name} (${SHOP_ROLES.legend.price.toLocaleString()} XP)`).setValue("legend").setEmoji(SHOP_ROLES.legend.emoji),
+          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.elite.name} (${SHOP_ROLES.elite.price.toLocaleString()} XP)`).setValue("elite").setEmoji(SHOP_ROLES.elite.emoji),
+          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.rookie.name} (${SHOP_ROLES.rookie.price.toLocaleString()} XP)`).setValue("rookie").setEmoji(SHOP_ROLES.rookie.emoji),
+          new StringSelectMenuOptionBuilder().setLabel(`${SHOP_ROLES.pro_player.name} (${SHOP_ROLES.pro_player.price.toLocaleString()} XP)`).setValue("pro_player").setEmoji(SHOP_ROLES.pro_player.emoji)
         );
 
       const row = new ActionRowBuilder().addComponents(selectMenu);
-
-      await message.channel.send({
-        embeds: [shopEmbed],
-        components: [row]
-      });
-
-    } catch (err) {
-      console.error("[Shop Panel Error]", err.message);
-    }
-
+      await message.channel.send({ embeds: [shopEmbed], components: [row] });
+    } catch (err) { console.error("[Shop Panel Error]", err.message); }
     return;
   }
 
@@ -986,11 +884,7 @@ client.on("messageCreate", async (message) => {
     try {
       const member = message.member;
       const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
-
-      const isManagement =
-        member.roles.cache.has(OWNER_ROLE_ID) ||
-        member.roles.cache.has(CO_OWNER_ROLE_ID) ||
-        message.author.id === message.guild.ownerId;
+      const isManagement = member.roles.cache.has(OWNER_ROLE_ID) || member.roles.cache.has(CO_OWNER_ROLE_ID) || message.author.id === message.guild.ownerId;
 
       if (!hasAdmin && !isManagement) {
         return await message.reply("❌ רק Owner, Co-Owner או מנהלים עם הרשאת Administrator מורשים ליצור דרופ של XP!");
@@ -1018,21 +912,10 @@ client.on("messageCreate", async (message) => {
         .setStyle(ButtonStyle.Success);
 
       const row = new ActionRowBuilder().addComponents(dropButton);
+      const sentMessage = await message.channel.send({ embeds: [dropEmbed], components: [row] });
 
-      const sentMessage = await message.channel.send({
-        embeds: [dropEmbed],
-        components: [row]
-      });
-
-      activeDrops.set(sentMessage.id, {
-        amount: amount,
-        creatorId: message.author.id
-      });
-
-    } catch (err) {
-      console.error("[XP Drop Command Error]", err.message);
-    }
-
+      activeDrops.set(sentMessage.id, { amount: amount, creatorId: message.author.id });
+    } catch (err) { console.error("[XP Drop Command Error]", err.message); }
     return;
   }
 
@@ -1043,23 +926,13 @@ client.on("messageCreate", async (message) => {
 
       if (message.channel.id !== XP_CHECK_CHANNEL_ID && !hasAdmin) {
         const warning = await message.reply("❌ ניתן להשתמש בפקודה הזו רק בחדר בדיקת ה-XP הייעודי!");
-
-        setTimeout(() => {
-          message.delete().catch(() => null);
-          warning.delete().catch(() => null);
-        }, 5000);
-
+        setTimeout(() => { message.delete().catch(() => null); warning.delete().catch(() => null); }, 5000);
         return;
       }
 
       const target = message.mentions.members.first();
-
       if (target && target.id !== member.id) {
-        const isStaff =
-          member.roles.cache.has(STAFF_ROLE_ID) ||
-          member.roles.cache.has(HIGH_STAFF_ROLE_ID) ||
-          message.author.id === message.guild.ownerId;
-
+        const isStaff = member.roles.cache.has(STAFF_ROLE_ID) || member.roles.cache.has(HIGH_STAFF_ROLE_ID) || message.author.id === message.guild.ownerId;
         if (!hasAdmin && !isStaff) {
           return await message.reply("❌ רק דרגות Staff ,High Staff או Administrator מורשים לבדוק XP של משתמשים אחרים!");
         }
@@ -1078,11 +951,7 @@ client.on("messageCreate", async (message) => {
         .setTimestamp();
 
       await message.channel.send({ embeds: [xpEmbed] });
-
-    } catch (err) {
-      console.error(err);
-    }
-
+    } catch (err) { console.error(err); }
     return;
   }
 
@@ -1090,11 +959,7 @@ client.on("messageCreate", async (message) => {
     try {
       const member = message.member;
       const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
-
-      const isManagement =
-        member.roles.cache.has(OWNER_ROLE_ID) ||
-        member.roles.cache.has(CO_OWNER_ROLE_ID) ||
-        message.author.id === message.guild.ownerId;
+      const isManagement = member.roles.cache.has(OWNER_ROLE_ID) || member.roles.cache.has(CO_OWNER_ROLE_ID) || message.author.id === message.guild.ownerId;
 
       if (!hasAdmin && !isManagement) {
         return await message.reply("❌ רק Owner, Co-Owner או מנהלים עם הרשאת Administrator מורשים להוסיף XP!");
@@ -1109,11 +974,9 @@ client.on("messageCreate", async (message) => {
       }
 
       addComponentsXP(target.id, amount);
-
       await message.reply(`✅ נוספו בהצלחה **${amount.toLocaleString()} XP** למשתמש ${target}.`);
 
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
-
       if (logChannel) {
         const logEmbed = new EmbedBuilder()
           .setTitle("➕ הוספת XP על ידי מנהל")
@@ -1124,14 +987,9 @@ client.on("messageCreate", async (message) => {
             { name: "💰 כמות:", value: `**${amount.toLocaleString()}** XP` }
           )
           .setTimestamp();
-
         await logChannel.send({ embeds: [logEmbed] });
       }
-
-    } catch (err) {
-      console.error(err);
-    }
-
+    } catch (err) { console.error(err); }
     return;
   }
 
@@ -1139,11 +997,7 @@ client.on("messageCreate", async (message) => {
     try {
       const member = message.member;
       const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
-
-      const isManagement =
-        member.roles.cache.has(OWNER_ROLE_ID) ||
-        member.roles.cache.has(CO_OWNER_ROLE_ID) ||
-        message.author.id === message.guild.ownerId;
+      const isManagement = member.roles.cache.has(OWNER_ROLE_ID) || member.roles.cache.has(CO_OWNER_ROLE_ID) || message.author.id === message.guild.ownerId;
 
       if (!hasAdmin && !isManagement) {
         return await message.reply("❌ רק Owner, Co-Owner או מנהלים עם הרשאת Administrator מורשים להוריד XP!");
@@ -1158,11 +1012,9 @@ client.on("messageCreate", async (message) => {
       }
 
       addComponentsXP(target.id, -amount);
-
       await message.reply(`🔻 הוסרו בהצלחה **${amount.toLocaleString()} XP** מהמשתמש ${target}.`);
 
       const logChannel = message.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
-
       if (logChannel) {
         const logEmbed = new EmbedBuilder()
           .setTitle("➖ הסרת XP על ידי מנהל")
@@ -1173,14 +1025,9 @@ client.on("messageCreate", async (message) => {
             { name: "📉 כמות:", value: `**${amount.toLocaleString()}** XP` }
           )
           .setTimestamp();
-
         await logChannel.send({ embeds: [logEmbed] });
       }
-
-    } catch (err) {
-      console.error(err);
-    }
-
+    } catch (err) { console.error(err); }
     return;
   }
 
@@ -1188,30 +1035,18 @@ client.on("messageCreate", async (message) => {
     try {
       const member = message.member;
       const keywordsAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
-
-      const isManagement =
-        member.roles.cache.has(OWNER_ROLE_ID) ||
-        member.roles.cache.has(CO_OWNER_ROLE_ID) ||
-        message.author.id === message.guild.ownerId;
+      const isManagement = member.roles.cache.has(OWNER_ROLE_ID) || member.roles.cache.has(CO_OWNER_ROLE_ID) || message.author.id === message.guild.ownerId;
 
       if (!keywordsAdmin && !isManagement) {
         return await message.reply("❌ רק Owner, Co-Owner או מנהלים עם הרשאת Administrator מורשים לאפס XP!");
       }
 
       const target = message.mentions.members.first();
-
-      if (!target) {
-        return await message.reply("❌ שימוש שגוי בפקודה. מבנה נכון: `!resetxp @שם_משתמש`");
-      }
+      if (!target) return await message.reply("❌ שימוש שגוי בפקודה. מבנה נכון: `!resetxp @שם_משתמש`");
 
       resetUserXP(target.id);
-
       await message.reply(`🔄 ה-XP של המשתמש ${target} אופס לחלוטין ל-0!`);
-
-    } catch (err) {
-      console.error(err);
-    }
-
+    } catch (err) { console.error(err); }
     return;
   }
 
@@ -1225,7 +1060,7 @@ client.on("messageCreate", async (message) => {
 
       const rolesData = {
         events: { id: "1496911471907569774", name: "⭐ Events Updates", emoji: "⭐" },
-        daily: { id: "1496911471915962552", name: "❓ Daily Question", emoji: "❓" },
+        daily: { id: "1496911471907569773", name: "❓ Daily Question", emoji: "❓" },
         giveaways: { id: "1496911471878078694", name: "🎉 Giveaways", emoji: "🎉" }
       };
 
@@ -1265,21 +1100,13 @@ client.on("messageCreate", async (message) => {
         .setLabel(`🎉 Giveaways`)
         .setStyle(currentRoleKey === "giveaways" ? ButtonStyle.Success : ButtonStyle.Primary);
 
-      const row = new ActionRowBuilder().addComponents(
-        eventsButton,
-        dailyButton,
-        giveawaysButton
-      );
+      const row = new ActionRowBuilder().addComponents(eventsButton, dailyButton, giveawaysButton);
 
-      await message.channel.send({
-        embeds: [embed],
-        components: [row]
-      });
+      await message.channel.send({ embeds: [embed], components: [row] });
 
     } catch (err) {
       console.error("[Get Role Command Error]", err.message);
     }
-
     return;
   }
 
@@ -1301,10 +1128,7 @@ client.on("messageCreate", async (message) => {
           { name: "📝 סיבת הבקשה לעזרה:", value: `\`\`\`fix\n${reason}\`\`\``, inline: false }
         )
         .setTimestamp()
-        .setFooter({
-          text: "מערכת קריאות עזרה • יש ללחוץ על הכפתור כדי לקחת אחריות",
-          iconURL: client.user.displayAvatarURL()
-        });
+        .setFooter({ text: "מערכת קריאות עזרה • יש ללחוץ על הכפתור כדי לקחת אחריות", iconURL: client.user.displayAvatarURL() });
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -1314,10 +1138,7 @@ client.on("messageCreate", async (message) => {
       );
 
       await message.channel.send({ embeds: [embed], components: [row] });
-
-    } catch (err) {
-      console.error("[Help Command Error]", err.message);
-    }
+    } catch (err) { console.error("[Help Command Error]", err.message); }
   }
 });
 
@@ -1340,16 +1161,11 @@ client.on("channelUpdate", async (oldChannel, newChannel) => {
 client.on("interactionCreate", async (interaction) => {
   
   // ─── LIVE STREAM SLASH COMMANDS ──────────────────────────────────────────
-  if (
-    interaction.isChatInputCommand() &&
-    ["lock", "unlock", "liveallow", "liveunallow"].includes(interaction.commandName)
-  ) {
+  if (interaction.isChatInputCommand() &&
+      ["lock", "unlock", "liveallow", "liveunallow"].includes(interaction.commandName)) {
     try {
       if (!interaction.guild) {
-        return await interaction.reply({
-          content: "❌ הפקודה זמינה רק בשרת.",
-          ephemeral: true
-        });
+        return await interaction.reply({ content: "❌ הפקודה זמינה רק בשרת.", ephemeral: true });
       }
 
       if (interaction.channelId !== LIVE_STREAM_COMMAND_CHANNEL_ID) {
@@ -1367,7 +1183,6 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       const liveChannel = getLiveStreamChannel(interaction.guild);
-
       if (!liveChannel || liveChannel.type !== ChannelType.GuildVoice) {
         return await interaction.reply({
           content: "❌ חדר ה-Live Stream לא נמצא או שהוא לא חדר קולי.",
@@ -1386,7 +1201,6 @@ client.on("interactionCreate", async (interaction) => {
             `מי שלא נמצא ברשימת המורשים יועבר אוטומטית לחדר קולי פנוי.\n` +
             `👤 אתה תמיד מורשה להיכנס.`
         });
-
         return;
       }
 
@@ -1399,13 +1213,11 @@ client.on("interactionCreate", async (interaction) => {
         await interaction.reply({
           content: "🔓 **ה-Live Stream נפתח.** עכשיו כל מי שיש לו הרשאת כניסה רגילה יכול להיכנס."
         });
-
         return;
       }
 
       if (interaction.commandName === "liveallow") {
         const target = interaction.options.getMember("user");
-
         if (!target) {
           return await interaction.reply({
             content: "❌ לא הצלחתי למצוא את המשתמש שבחרת.",
@@ -1420,13 +1232,11 @@ client.on("interactionCreate", async (interaction) => {
             `✅ ${target} נוסף לרשימת המורשים.\n` +
             `הוא יכול להיכנס ל-<#${LIVE_STREAM_CHANNEL_ID}> גם כשהחדר נעול.`
         });
-
         return;
       }
 
       if (interaction.commandName === "liveunallow") {
         const target = interaction.options.getMember("user");
-
         if (!target) {
           return await interaction.reply({
             content: "❌ לא הצלחתי למצוא את המשתמש שבחרת.",
@@ -1441,42 +1251,15 @@ client.on("interactionCreate", async (interaction) => {
           });
         }
 
-        const wasAllowed = liveStreamAllowedUsers.delete(target.id);
-
-        if (!wasAllowed) {
-          return await interaction.reply({
-            content: `ℹ️ ${target} כבר לא נמצא ברשימת המורשים.`,
-            ephemeral: true
-          });
-        }
-
-        if (
-          liveStreamLocked &&
-          target.voice?.channelId === LIVE_STREAM_CHANNEL_ID
-        ) {
-          const fallbackChannel = getAvailableVoiceChannel(target);
-
-          if (fallbackChannel) {
-            await target.voice.setChannel(
-              fallbackChannel,
-              "Live Stream access was revoked"
-            ).catch(() => null);
-          } else {
-            await target.voice.disconnect(
-              "Live Stream access was revoked and no free voice channel was found"
-            ).catch(() => null);
-          }
-        }
+        liveStreamAllowedUsers.delete(target.id);
 
         await interaction.reply({
           content:
-            `✅ ההרשאה של ${target} בוטלה.\n` +
-            `הוא לא יוכל להיכנס ל-<#${LIVE_STREAM_CHANNEL_ID}> כשהחדר נעול.`
+            `🚫 ההרשאה של ${target} בוטלה.\n` +
+            `כשהחדר נעול, הוא יועבר אוטומטית אם ינסה להיכנס ל-Live Stream.`
         });
-
         return;
       }
-
     } catch (err) {
       console.error("[Live Stream Command Error]", err.message);
 
@@ -1487,7 +1270,6 @@ client.on("interactionCreate", async (interaction) => {
         }).catch(() => null);
       }
     }
-
     return;
   }
 
@@ -1496,15 +1278,13 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isButton() && interaction.customId.startsWith("getrole_")) {
     try {
       const roleKey = interaction.customId.replace("getrole_", "");
-
       const rolesData = {
         events: { id: "1496911471907569774", name: "⭐ Events Updates", emoji: "⭐" },
-        daily: { id: "1496911471915962552", name: "❓ Daily Question", emoji: "❓" },
+        daily: { id: "1496911471907569773", name: "❓ Daily Question", emoji: "❓" },
         giveaways: { id: "1496911471878078694", name: "🎉 Giveaways", emoji: "🎉" }
       };
 
       const roleData = rolesData[roleKey];
-
       if (!roleData) return;
 
       const member = interaction.member;
@@ -1539,17 +1319,9 @@ client.on("interactionCreate", async (interaction) => {
           .setLabel(`🎉 Giveaways`)
           .setStyle(ButtonStyle.Primary);
 
-        const row = new ActionRowBuilder().addComponents(
-          eventsButton,
-          dailyButton,
-          giveawaysButton
-        );
+        const row = new ActionRowBuilder().addComponents(eventsButton, dailyButton, giveawaysButton);
 
-        await interaction.message.edit({
-          embeds: [updatedEmbed],
-          components: [row]
-        });
-
+        await interaction.message.edit({ embeds: [updatedEmbed], components: [row] });
         return;
       }
 
@@ -1590,41 +1362,23 @@ client.on("interactionCreate", async (interaction) => {
         .setLabel(`🎉 Giveaways`)
         .setStyle(roleKey === "giveaways" ? ButtonStyle.Success : ButtonStyle.Primary);
 
-      const row = new ActionRowBuilder().addComponents(
-        eventsButton,
-        dailyButton,
-        giveawaysButton
-      );
+      const row = new ActionRowBuilder().addComponents(eventsButton, dailyButton, giveawaysButton);
 
-      await interaction.message.edit({
-        embeds: [updatedEmbed],
-        components: [row]
-      });
+      await interaction.message.edit({ embeds: [updatedEmbed], components: [row] });
 
     } catch (err) {
       console.error("[Get Role Button Error]", err.message);
-      await interaction.reply({
-        content: "❌ אירעה שגיאה. נסה שוב.",
-        ephemeral: true
-      });
+      await interaction.reply({ content: "❌ אירעה שגיאה. נסה שוב.", ephemeral: true });
     }
-
     return;
   }
 
   if (interaction.isButton() && interaction.customId === "xp_drop_claim") {
     try {
       const dropData = activeDrops.get(interaction.message.id);
-
-      if (!dropData) {
-        return await interaction.reply({
-          content: "❌ הדרופ הזה כבר נאסף!",
-          ephemeral: true
-        });
-      }
+      if (!dropData) return await interaction.reply({ content: "❌ הדרופ הזה כבר נאסף!", ephemeral: true });
 
       await interaction.deferReply();
-
       activeDrops.delete(interaction.message.id);
       addComponentsXP(interaction.user.id, dropData.amount);
 
@@ -1633,26 +1387,12 @@ client.on("interactionCreate", async (interaction) => {
         .setColor("#7f8c8d");
 
       const disabledButton = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("xp_drop_claimed_done")
-          .setLabel("🔒 נאסף")
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(true)
+        new ButtonBuilder().setCustomId("xp_drop_claimed_done").setLabel("🔒 נאסף").setStyle(ButtonStyle.Secondary).setDisabled(true)
       );
+      await interaction.message.edit({ embeds: [updatedEmbed], components: [disabledButton] }).catch(() => null);
 
-      await interaction.message.edit({
-        embeds: [updatedEmbed],
-        components: [disabledButton]
-      }).catch(() => null);
-
-      await interaction.editReply({
-        content: `🎉 אספת בהצלחה **${dropData.amount.toLocaleString()} XP**!`
-      });
-
-    } catch (err) {
-      console.error(err);
-    }
-
+      await interaction.editReply({ content: `🎉 אספת בהצלחה **${dropData.amount.toLocaleString()} XP**!` });
+    } catch (err) { console.error(err); }
     return;
   }
 
@@ -1682,7 +1422,6 @@ client.on("interactionCreate", async (interaction) => {
         .setRequired(true);
 
       const actionRow = new ActionRowBuilder().addComponents(nameInput);
-
       modal.addComponents(actionRow);
 
       return await interaction.showModal(modal);
@@ -1690,68 +1429,42 @@ client.on("interactionCreate", async (interaction) => {
 
     try {
       await interaction.deferReply({ ephemeral: true });
-
       const roleData = SHOP_ROLES[chosenKey];
-
-      if (!roleData) {
-        return await interaction.editReply({
-          content: "❌ מוצר לא נמצא."
-        });
-      }
+      if (!roleData) return await interaction.editReply({ content: "❌ מוצר לא נמצא." });
 
       const member = interaction.member;
-
-      if (member.roles.cache.has(roleData.id)) {
-        return await interaction.editReply({
-          content: `❌ כבר יש לך את הרול הזה!`
-        });
-      }
+      if (member.roles.cache.has(roleData.id)) return await interaction.editReply({ content: `❌ כבר יש לך את הרול הזה!` });
 
       if (userXp < roleData.price) {
-        return await interaction.editReply({
-          content: `❌ אין לך מספיק XP!`
-        });
+        return await interaction.editReply({ content: `❌ אין לך מספיק XP!` });
       }
 
       addComponentsXP(interaction.user.id, -roleData.price);
       await member.roles.add(roleData.id);
 
-      await interaction.editReply({
-        content: `🎉 קנית בהצלחה את הרול <@&${roleData.id}> תמורת **${roleData.price.toLocaleString()}** XP!`
-      });
+      await interaction.editReply({ content: `🎉 קנית בהצלחה את הרול <@&${roleData.id}> תמורת **${roleData.price.toLocaleString()}** XP!` });
 
       const logChannel = interaction.guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
-
       if (logChannel) {
         const buyLog = new EmbedBuilder()
           .setTitle("🛍️ רכישת רול בחנות")
           .setColor("#9b59b6")
           .setDescription(`${interaction.user} רכש את הרול <@&${roleData.id}> תמורת ${roleData.price.toLocaleString()} XP.`)
           .setTimestamp();
-
-        await logChannel.send({
-          embeds: [buyLog]
-        });
+        await logChannel.send({ embeds: [buyLog] });
       }
-
-    } catch (err) {
-      console.error(err);
-    }
-
+    } catch (err) { console.error(err); }
     return;
   }
 
   if (interaction.isModalSubmit() && interaction.customId === "private_voice_name_modal") {
     try {
       await interaction.deferReply({ ephemeral: true });
-
       const channelName = interaction.fields.getTextInputValue("voice_channel_name_input");
       const userXp = getUserXP(interaction.user.id);
 
       if (userXp < PRIVATE_VOICE_PRICE) {
-        return await interaction.editReply({
-          content: "❌ אירעה שגיאה, אין לך מספיק XP כרגע."
-        });
+        return await interaction.editReply({ content: "❌ אירעה שגיאה, אין לך מספיק XP כרגע." });
       }
 
       const guild = interaction.guild;
@@ -1759,10 +1472,7 @@ client.on("interactionCreate", async (interaction) => {
       const permissionOverwrites = [
         {
           id: guild.roles.everyone.id,
-          deny: [
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.Connect
-          ], 
+          deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect], 
         },
         {
           id: interaction.user.id,
@@ -1778,12 +1488,7 @@ client.on("interactionCreate", async (interaction) => {
       ALL_STAFF_IDS.forEach(roleId => {
         permissionOverwrites.push({
           id: roleId,
-          allow: [
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.Connect,
-            PermissionFlagsBits.Speak,
-            PermissionFlagsBits.MoveMembers
-          ],
+          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak, PermissionFlagsBits.MoveMembers],
         });
       });
 
@@ -1801,75 +1506,41 @@ client.on("interactionCreate", async (interaction) => {
       });
 
       const logChannel = guild.channels.cache.get(STAFF_LOGS_CHANNEL_ID);
-
       if (logChannel) {
         const privateVoiceLog = new EmbedBuilder()
           .setTitle("👑 רכישת חדר וויס פרטי")
           .setColor("#1abc9c")
           .addFields(
-            {
-              name: "👤 הקונה:",
-              value: `${interaction.user} (${interaction.user.id})`,
-              inline: true
-            },
-            {
-              name: "🔊 שם החדר שנבחר:",
-              value: `\`${channelName}\``,
-              inline: true
-            },
-            {
-              name: "💰 עלות:",
-              value: `**${PRIVATE_VOICE_PRICE.toLocaleString()}** XP`
-            }
+            { name: "👤 הקונה:", value: `${interaction.user} (${interaction.user.id})`, inline: true },
+            { name: "🔊 שם החדר שנבחר:", value: `\`${channelName}\``, inline: true },
+            { name: "💰 עלות:", value: `**${PRIVATE_VOICE_PRICE.toLocaleString()}** XP` }
           )
           .setTimestamp();
-
-        await logChannel.send({
-          embeds: [privateVoiceLog]
-        });
+        await logChannel.send({ embeds: [privateVoiceLog] });
       }
 
     } catch (err) {
       console.error("[Create Private Voice Error]", err.message);
-
-      await interaction.editReply({
-        content: "❌ אירעה שגיאה טכנית במהלך יצירת חדר הוויס. פנה למנהל השרת."
-      });
+      await interaction.editReply({ content: "❌ אירעה שגיאה טכנית במהלך יצירת חדר הוויס. פנה למנהל השרת." });
     }
-
     return;
   }
 
   if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type_select") {
     try {
       await interaction.deferReply({ ephemeral: true });
-
       const choice = interaction.values[0]; 
       const guild = interaction.guild;
 
       const permissionOverwrites = [
-        {
-          id: guild.roles.everyone.id,
-          deny: [PermissionFlagsBits.ViewChannel]
-        },
-        {
-          id: interaction.user.id,
-          allow: [
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.SendMessages,
-            PermissionFlagsBits.ReadMessageHistory
-          ]
-        }
+        { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+        { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
       ];
 
       ALL_STAFF_IDS.forEach(roleId => {
         permissionOverwrites.push({
           id: roleId,
-          allow: [
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.SendMessages,
-            PermissionFlagsBits.ReadMessageHistory
-          ],
+          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
         });
       });
 
@@ -1887,24 +1558,12 @@ client.on("interactionCreate", async (interaction) => {
         .setTimestamp();
 
       const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`ticket_claim_${interaction.user.id}`)
-          .setLabel("🤝 קח אחריות")
-          .setStyle(ButtonStyle.Success),
-
-        new ButtonBuilder()
-          .setCustomId("ticket_close")
-          .setLabel("🔒 סגור טיקט")
-          .setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId(`ticket_claim_${interaction.user.id}`).setLabel("🤝 קח אחריות").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("ticket_close").setLabel("🔒 סגור טיקט").setStyle(ButtonStyle.Danger)
       );
 
       const staffMentions = TICKET_PING_ROLES.map(id => `<@&${id}>`).join(" ");
-
-      await ticketChannel.send({
-        content: `${interaction.user} ${staffMentions}`,
-        embeds: [ticketEmbed],
-        components: [actionRow]
-      });
+      await ticketChannel.send({ content: `${interaction.user} ${staffMentions}`, embeds: [ticketEmbed], components: [actionRow] });
 
       if (choice === "בחינה-לצוות") {
         const examEmbed = new EmbedBuilder()
@@ -1926,20 +1585,11 @@ client.on("interactionCreate", async (interaction) => {
             "💬 *התשובות יתקבלו וייבדקו בהמשך על ידי צוות הניהול הגבוה! בהצלחה!*"
           )
           .setColor("#f39c12");
-
-        await ticketChannel.send({
-          embeds: [examEmbed]
-        });
+        await ticketChannel.send({ embeds: [examEmbed] });
       }
 
-      await interaction.editReply({
-        content: `✅ הטיקט שלך נפתח בהצלחה בחדר: ${ticketChannel}`
-      });
-
-    } catch (err) {
-      console.error(err);
-    }
-
+      await interaction.editReply({ content: `✅ הטיקט שלך נפתח בהצלחה בחדר: ${ticketChannel}` });
+    } catch (err) { console.error(err); }
     return;
   }
 
@@ -1951,140 +1601,57 @@ client.on("interactionCreate", async (interaction) => {
         .setCustomId("ticket_type_select")
         .setPlaceholder("🎯 בחר את נושא הפנייה שלך...")
         .addOptions(
-          new StringSelectMenuOptionBuilder()
-            .setLabel("בחינה לצוות")
-            .setValue("בחינה-לצוות"),
-
-          new StringSelectMenuOptionBuilder()
-            .setLabel("עזרה")
-            .setValue("עזרה"),
-
-          new StringSelectMenuOptionBuilder()
-            .setLabel("שת\"פ (שותפות)")
-            .setValue("שתפ"),
-
-          new StringSelectMenuOptionBuilder()
-            .setLabel("תלונה")
-            .setValue("תלונה")
+          new StringSelectMenuOptionBuilder().setLabel("בחינה לצוות").setValue("בחינה-לצוות"),
+          new StringSelectMenuOptionBuilder().setLabel("עזרה").setValue("עזרה"),
+          new StringSelectMenuOptionBuilder().setLabel("שת\"פ (שותפות)").setValue("שתפ"),
+          new StringSelectMenuOptionBuilder().setLabel("תלונה").setValue("תלונה")
         );
-
       const row = new ActionRowBuilder().addComponents(selectMenu);
-
-      await interaction.reply({
-        content: "אנא בחר מהתפריט את נושא הפנייה:",
-        components: [row],
-        ephemeral: true
-      });
-
-    } catch (err) {
-      console.error(err);
-    }
-
+      await interaction.reply({ content: "אנא בחר מהתפריט את נושא הפנייה:", components: [row], ephemeral: true });
+    } catch (err) { console.error(err); }
     return;
   }
 
   if (interaction.customId.startsWith("ticket_claim_")) {
     try {
       const member = interaction.member;
-
-      const hasPermission =
-        ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) ||
-        interaction.user.id === interaction.guild.ownerId ||
-        member.permissions.has(PermissionFlagsBits.Administrator);
+      const hasPermission = ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === interaction.guild.ownerId || member.permissions.has(PermissionFlagsBits.Administrator);
       
-      if (!hasPermission) {
-        return await interaction.reply({
-          content: "❌ רק צוות השרת מורשה לקחת טיקטים!",
-          ephemeral: true
-        });
-      }
+      if (!hasPermission) return await interaction.reply({ content: "❌ רק צוות השרת מורשה לקחת טיקטים!", ephemeral: true });
 
       const requesterId = interaction.customId.split("_")[2];
-
-      const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-        .addFields({
-          name: "📌 סטטוס טיקט:",
-          value: `נלקח לטיפול על ידי ${interaction.user}`
-        })
-        .setColor("#2ecc71");
-
+      const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).addFields({ name: "📌 סטטוס טיקט:", value: `נלקח לטיפול על ידי ${interaction.user}` }).setColor("#2ecc71");
       const updatedRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`ticket_claimed_by_${interaction.user.id}`)
-          .setLabel("✔ הטיקט בטיפול")
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(true),
-
-        new ButtonBuilder()
-          .setCustomId("ticket_close")
-          .setLabel("🔒 סגור טיקט")
-          .setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId(`ticket_claimed_by_${interaction.user.id}`).setLabel("✔ הטיקט בטיפול").setStyle(ButtonStyle.Secondary).setDisabled(true), 
+        new ButtonBuilder().setCustomId("ticket_close").setLabel("🔒 סגור טיקט").setStyle(ButtonStyle.Danger)
       );
 
-      await interaction.update({
-        embeds: [updatedEmbed],
-        components: [updatedRow]
-      });
-
-      await interaction.channel.send({
-        content: `💼 **הטיקט נלקח לטיפול:** ${interaction.user} יעזור לך כעת, <@${requesterId}>.`
-      });
-
-    } catch (err) {
-      console.error(err);
-    }
-
+      await interaction.update({ embeds: [updatedEmbed], components: [updatedRow] });
+      await interaction.channel.send({ content: `💼 **הטיקט נלקח לטיפול:** ${interaction.user} יעזור לך כעת, <@${requesterId}>.` });
+    } catch (err) { console.error(err); }
     return;
   }
 
   if (interaction.customId === "ticket_close") {
     try {
       const member = interaction.member;
+      const hasAllowedRole = TICKET_CLOSE_ROLES.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === interaction.guild.ownerId || member.permissions.has(PermissionFlagsBits.Administrator);
 
-      const hasAllowedRole =
-        TICKET_CLOSE_ROLES.some(roleId => member.roles.cache.has(roleId)) ||
-        interaction.user.id === interaction.guild.ownerId ||
-        member.permissions.has(PermissionFlagsBits.Administrator);
+      if (!hasAllowedRole) return await interaction.reply({ content: "❌ אין לך הרשאה לסגור טיקט!", ephemeral: true });
 
-      if (!hasAllowedRole) {
-        return await interaction.reply({
-          content: "❌ אין לך הרשאה לסגור טיקט!",
-          ephemeral: true
-        });
-      }
-
-      await interaction.reply({
-        content: "🔒 הטיקט נסגר ויימחק בעוד כ-5 שניות..."
-      });
-
-      setTimeout(async () => {
-        await interaction.channel.delete().catch(() => null);
-      }, 5000);
-
-    } catch (err) {
-      console.error(err);
-    }
-
+      await interaction.reply({ content: "🔒 הטיקט נסגר ויימחק בעוד כ-5 שניות..." });
+      setTimeout(async () => { await interaction.channel.delete().catch(() => null); }, 5000);
+    } catch (err) { console.error(err); }
     return;
   }
 
   if (interaction.customId === "verify_button") {
     try {
       const member = interaction.member;
-
-      if (member.roles.cache.has(VERIFY_ROLE_ID)) {
-        return await interaction.reply({
-          content: "❌ אתה כבר מאומת!",
-          ephemeral: true
-        });
-      }
-
+      if (member.roles.cache.has(VERIFY_ROLE_ID)) return await interaction.reply({ content: "❌ אתה כבר מאומת!", ephemeral: true });
+      
       await member.roles.add(VERIFY_ROLE_ID);
-
-      await interaction.reply({
-        content: "🎉 אומתת בהצלחה! כל ערוצי השרת נפתחו עבורך.",
-        ephemeral: true
-      });
+      await interaction.reply({ content: "🎉 אומתת בהצלחה! כל ערוצי השרת נפתחו עבורך.", ephemeral: true });
 
       const welcomeDmEmbed = new EmbedBuilder()
         .setTitle(`🎉 ברוכים הבאים אל ${interaction.guild.name}!`)
@@ -2092,14 +1659,8 @@ client.on("interactionCreate", async (interaction) => {
         .setColor("#00ff7f")
         .setTimestamp();
 
-      await member.send({
-        embeds: [welcomeDmEmbed]
-      }).catch(() => {});
-
-    } catch (err) {
-      console.error(err);
-    }
-
+      await member.send({ embeds: [welcomeDmEmbed] }).catch(() => {});
+    } catch (err) { console.error(err); }
     return;
   }
 
@@ -2107,76 +1668,35 @@ client.on("interactionCreate", async (interaction) => {
     try {
       const member = interaction.member;
       const guild = interaction.guild;
+      const hasPermission = ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) || interaction.user.id === guild.ownerId || member.permissions.has(PermissionFlagsBits.Administrator);
 
-      const hasPermission =
-        ALL_STAFF_IDS.some(roleId => member.roles.cache.has(roleId)) ||
-        interaction.user.id === guild.ownerId ||
-        member.permissions.has(PermissionFlagsBits.Administrator);
-
-      if (!hasPermission) {
-        return await interaction.reply({
-          content: "❌ אינך מורשה לטפל בקריאות עזרה!",
-          ephemeral: true
-        });
-      }
+      if (!hasPermission) return await interaction.reply({ content: "❌ אינך מורשה לטפל בקריאות עזרה!", ephemeral: true });
 
       let titlePrefix = "איש צוות";
-
-      if (
-        interaction.user.id === guild.ownerId ||
-        member.roles.cache.has(OWNER_ROLE_ID)
-      ) {
-        titlePrefix = "האוונר";
-      } else if (member.roles.cache.has(CO_OWNER_ROLE_ID)) {
-        titlePrefix = "הקו-אוונר";
-      }
+      if (interaction.user.id === guild.ownerId || member.roles.cache.has(OWNER_ROLE_ID)) titlePrefix = "האוונר";
+      else if (member.roles.cache.has(CO_OWNER_ROLE_ID)) titlePrefix = "הקו-אוונר";
 
       const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
         .setColor("#2ecc71")
-        .addFields({
-          name: "🤝 סטטוס טיפול:",
-          value: `הקריאה בטיפול כעת על ידי ${titlePrefix} ${interaction.user}`
-        });
+        .addFields({ name: "🤝 סטטוס טיפול:", value: `הקריאה בטיפול כעת על ידי ${titlePrefix} ${interaction.user}` });
 
-      await interaction.update({
-        embeds: [updatedEmbed],
-        components: []
-      });
-
-      await interaction.followUp({
-        content: `✅ לקחת את קריאת העזרה בהצלחה.`,
-        ephemeral: true
-      });
-
-    } catch (err) {
-      console.error(err);
-    }
+      await interaction.update({ embeds: [updatedEmbed], components: [] });
+      await interaction.followUp({ content: `✅ לקחת את קריאת העזרה בהצלחה.`, ephemeral: true });
+    } catch (err) { console.error(err); }
   }
 });
 
 // ─── Anti-Nuke System Events ──────────────────────────────────────────────────
 
 client.on("channelDelete", async (channel) => {
-  if (
-    !channel.guild ||
-    channel.parentId === TICKET_CATEGORY_ID ||
-    channel.parentId === PRIVATE_VOICE_CATEGORY_ID
-  ) return;
-
+  if (!channel.guild || channel.parentId === TICKET_CATEGORY_ID || channel.parentId === PRIVATE_VOICE_CATEGORY_ID) return;
   try {
     await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    const logs = await channel.guild.fetchAuditLogs({
-      limit: 1,
-      type: AuditLogEvent.ChannelDelete
-    });
-
+    const logs = await channel.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelDelete });
     const logEntry = logs.entries.first();
-
     if (!logEntry) return;
 
     const { executor } = logEntry;
-
     if (await shouldBypass(channel.guild, executor.id)) return;
 
     await channel.guild.channels.create({
@@ -2185,76 +1705,38 @@ client.on("channelDelete", async (channel) => {
       parent: channel.parentId ?? undefined,
       topic: channel.topic ?? undefined,
       nsfw: channel.nsfw ?? false,
-      permissionOverwrites:
-        channel.permissionOverwrites?.cache.map((o) => ({
-          id: o.id,
-          allow: o.allow.bitfield,
-          deny: o.deny.bitfield
-        })) ?? [],
+      permissionOverwrites: channel.permissionOverwrites?.cache.map((o) => ({ id: o.id, allow: o.allow.bitfield, deny: o.deny.bitfield })) ?? [],
     });
 
-    await punishUser(
-      channel.guild,
-      executor.id,
-      `Deleted channel/category: #${channel.name}`
-    );
-
-  } catch (err) {
-    console.error(err.message);
-  }
+    await punishUser(channel.guild, executor.id, `Deleted channel/category: #${channel.name}`);
+  } catch (err) { console.error(err.message); }
 });
 
 client.on("channelCreate", async (channel) => {
-  if (
-    !channel.guild ||
-    channel.parentId === TICKET_CATEGORY_ID ||
-    channel.parentId === PRIVATE_VOICE_CATEGORY_ID
-  ) return;
-
+  if (!channel.guild || channel.parentId === TICKET_CATEGORY_ID || channel.parentId === PRIVATE_VOICE_CATEGORY_ID) return;
   try {
-    const logs = await channel.guild.fetchAuditLogs({
-      limit: 1,
-      type: AuditLogEvent.ChannelCreate
-    });
-
+    const logs = await channel.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelCreate });
     const logEntry = logs.entries.first();
-
     if (!logEntry) return;
 
     const { executor } = logEntry;
-
     if (await shouldBypass(channel.guild, executor.id)) return;
 
     if (isMassActionTriggered(executor.id, "channel_create")) {
       await channel.delete().catch(() => null);
-
-      await punishUser(
-        channel.guild,
-        executor.id,
-        "Mass channel creation spam"
-      );
+      await punishUser(channel.guild, executor.id, "Mass channel creation spam");
     }
-
-  } catch (err) {
-    console.error(err.message);
-  }
+  } catch (err) { console.error(err.message); }
 });
 
 client.on("roleDelete", async (role) => {
   try {
     await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    const logs = await role.guild.fetchAuditLogs({
-      limit: 1,
-      type: AuditLogEvent.RoleDelete
-    });
-
+    const logs = await role.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleDelete });
     const logEntry = logs.entries.first();
-
     if (!logEntry) return;
 
     const { executor } = logEntry;
-
     if (await shouldBypass(role.guild, executor.id)) return;
 
     await role.guild.roles.create({
@@ -2265,131 +1747,47 @@ client.on("roleDelete", async (role) => {
       mentionable: role.mentionable,
       position: role.position,
     });
-
-    await punishUser(
-      role.guild,
-      executor.id,
-      `Deleted server role: ${role.name}`
-    );
-
-  } catch (err) {
-    console.error(err.message);
-  }
+    await punishUser(role.guild, executor.id, `Deleted server role: ${role.name}`);
+  } catch (err) { console.error(err.message); }
 });
 
 client.on("roleCreate", async (role) => {
   try {
-    const logs = await role.guild.fetchAuditLogs({
-      limit: 1,
-      type: AuditLogEvent.RoleCreate
-    });
-
+    const logs = await role.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleCreate });
     const logEntry = logs.entries.first();
-
     if (!logEntry) return;
 
     const { executor } = logEntry;
-
     if (await shouldBypass(role.guild, executor.id)) return;
 
     if (isMassActionTriggered(executor.id, "role_create")) {
       await role.delete().catch(() => null);
-
-      await punishUser(
-        role.guild,
-        executor.id,
-        "Mass role creation spam"
-      );
+      await punishUser(role.guild, executor.id, "Mass role creation spam");
     }
-
-  } catch (err) {
-    console.error(err.message);
-  }
+  } catch (err) { console.error(err.message); }
 });
 
 client.on("guildAuditLogEntryCreate", async (auditLogEntry, guild) => {
   try {
     const { action, executorId } = auditLogEntry;
-
     if (!executorId || await shouldBypass(guild, executorId)) return;
 
-    if (action === AuditLogEvent.EmojiDelete) {
-      await punishUser(
-        guild,
-        executorId,
-        "Deleted a server emoji"
-      );
-    }
-
-    if (
-      action === AuditLogEvent.WebhookCreate ||
-      action === AuditLogEvent.WebhookDelete
-    ) {
-      await punishUser(
-        guild,
-        executorId,
-        "Unauthorized Webhook manipulation"
-      );
-    }
-
-    if (action === AuditLogEvent.GuildUpdate) {
-      await punishUser(
-        guild,
-        executorId,
-        "Attempted to modify server settings"
-      );
-    }
-
+    if (action === AuditLogEvent.EmojiDelete) await punishUser(guild, executorId, "Deleted a server emoji");
+    if (action === AuditLogEvent.WebhookCreate || action === AuditLogEvent.WebhookDelete) await punishUser(guild, executorId, "Unauthorized Webhook manipulation");
+    if (action === AuditLogEvent.GuildUpdate) await punishUser(guild, executorId, "Attempted to modify server settings");
+    
     if (action === AuditLogEvent.RoleUpdate) {
-      const logs = await guild.fetchAuditLogs({
-        limit: 1,
-        type: AuditLogEvent.RoleUpdate
-      });
-
+      const logs = await guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleUpdate });
       const entry = logs.entries.first();
-
       if (entry) {
-        const hasAdminUpdate = entry.changes.some(
-          c =>
-            c.key === "permissions" &&
-            (BigInt(c.new) & PermissionFlagsBits.Administrator)
-        );
-
-        if (hasAdminUpdate) {
-          await punishUser(
-            guild,
-            executorId,
-            "Granted dangerous Administrator permissions"
-          );
-        }
+        const hasAdminUpdate = entry.changes.some(c => c.key === "permissions" && (BigInt(c.new) & PermissionFlagsBits.Administrator));
+        if (hasAdminUpdate) await punishUser(guild, executorId, "Granted dangerous Administrator permissions");
       }
     }
 
-    if (
-      action === AuditLogEvent.MemberBanAdd &&
-      isMassActionTriggered(executorId, "mass_ban")
-    ) {
-      await punishUser(
-        guild,
-        executorId,
-        "Mass banning users"
-      );
-    }
-
-    if (
-      action === AuditLogEvent.MemberKick &&
-      isMassActionTriggered(executorId, "mass_kick")
-    ) {
-      await punishUser(
-        guild,
-        executorId,
-        "Mass kicking users"
-      );
-    }
-
-  } catch (err) {
-    console.error(err.message);
-  }
+    if (action === AuditLogEvent.MemberBanAdd && isMassActionTriggered(executorId, "mass_ban")) await punishUser(guild, executorId, "Mass banning users");
+    if (action === AuditLogEvent.MemberKick && isMassActionTriggered(executorId, "mass_kick")) await punishUser(guild, executorId, "Mass kicking users");
+  } catch (err) { console.error(err.message); }
 });
 
 client.login(process.env.DISCORD_TOKEN);
